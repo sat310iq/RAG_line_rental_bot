@@ -1,0 +1,21 @@
+question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_ids,expected_answer,notes
+退去時の原状回復の基本方針は？,faq,faq,FAQ001,restoration,原状回復は借主の責任で行う必要があります,FAQコレクションから回答
+契約で禁止されている行為は？,pdf,pdf,contract.pdf p5,contract.pdf p5,契約で禁止されている行為について説明します,PDFコレクションから回答
+水漏れがあった場合の一次対応は？,ops,ops,LOG001,,水漏れが発生した場合の一次対応手順を説明します,運用ログから回答（stable_idは実行時に生成）
+原状回復の費用負担と契約条項の関係は？,multi,"faq,pdf",FAQ002 contract.pdf p12,"restoration_cost,contract.pdf p12",原状回復の費用負担と契約条項の関係について説明します,複数ソース統合
+過去の騒音トラブルの対応事例は？,ops,ops,LOG002 LOG003,,過去の騒音トラブルの対応事例を紹介します,運用ログから複数事例（stable_idは実行時に生成）
+契約期間の延長手続きは？,faq,faq,FAQ003,renewal,契約期間の延長手続きについて説明します,FAQコレクションから回答
+管理費の支払い方法は？,faq,faq,FAQ004,common_fee,管理費の支払い方法について説明します,FAQコレクションから回答
+ペット飼育の可否と条件は？,pdf,pdf,contract.pdf p8,ペット飼育の可否,ペットの飼育は禁止されています,FAQコレクションから回答（intent値を使用）
+鍵の紛失時の対応は？,ops,ops,LOG004,鍵_紛失,鍵の紛失時の対応手順を説明します,FAQコレクションから回答（intent値を使用）
+退去時の立会い検査の流れは？,multi,"faq,ops",FAQ005 LOG005,move_out,退去時の立会い検査の流れについて説明します,FAQと運用ログ統合
+契約解除の条件は？,pdf,pdf,contract.pdf p15,termination,契約解除の条件について説明します,FAQコレクションから回答（intent値を使用）
+駐車場の利用ルールは？,faq,faq,FAQ006,,駐車場の利用ルールについて説明します,FAQコレクションから回答（該当intentなし）
+設備故障時の修理対応は？,multi,"faq,ops",FAQ007 LOG006,equipment_repair,設備故障時の修理対応について説明します,FAQと運用ログ統合
+入居時の初期費用は？,faq,faq,FAQ008,,入居時の初期費用について説明します,FAQコレクションから回答（該当intentなし）
+近隣への配慮事項は？,pdf,pdf,contract.pdf p10,care_duty,近隣への配慮事項について説明します,FAQコレクションから回答（intent値を使用）
+ゴミ出しのルールは？,faq,faq,FAQ009,ゴミ出し_基本,ゴミ出しのルールについて説明します,FAQコレクションから回答
+室内のリフォームは可能か？,pdf,pdf,contract.pdf p7,contract.pdf p7,室内のリフォームについて説明します,PDFコレクションから回答
+過去の火災報知器誤作動の対応は？,ops,ops,LOG007,,過去の火災報知器誤作動の対応事例を紹介します,運用ログから回答（stable_idは実行時に生成）
+契約更新の手続きは？,multi,"faq,pdf",FAQ010 contract.pdf p20,renewal,契約更新の手続きについて説明します,FAQとPDF統合
+不明な質問（存在しない情報について）,edge_case,none,none,,不明な点については管理会社にお問い合わせください,エッジケース - 不明な質問
