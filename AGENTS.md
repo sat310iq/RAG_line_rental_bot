@@ -59,3 +59,25 @@ bd dep add <child> <parent>  # Link tasks (child depends on parent)
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## Evaluation System Improvements (2026-01-23)
+
+### Problem
+- Recall@k metrics were 0.0 because document IDs were not correctly extracted from evidence
+- LLM-generated evidence strings did not match expected document ID formats
+
+### Solution
+- Modified `RAGAnswerer.answer()` to extract actual document IDs from reranked documents
+- Replaced LLM-generated evidence with actual document IDs (intent for FAQ, stable_id for OPS, filename+page for PDF)
+- Simplified `extract_doc_ids_from_evidence()` since evidence now contains IDs directly
+- Added cache clearing in evaluation script for fresh results
+
+### Results
+- **Before**: avg_recall_at_5: 0.00, avg_relevance: 0.90, avg_hallucination: 0.90
+- **After**: avg_recall_at_5: 0.10, avg_relevance: 0.80, avg_hallucination: 0.80
+- Evaluation results are now correctly recorded in Comet ML (OPIK)
+
+### Files Changed
+- `src/rag_answerer.py`: Extract document IDs from reranked documents
+- `src/evaluate.py`: Simplify extract_doc_ids_from_evidence()
+- `scripts/run_simple_eval.py`: Clear cache before evaluation
+
