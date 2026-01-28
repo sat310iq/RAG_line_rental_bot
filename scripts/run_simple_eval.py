@@ -9,7 +9,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,6 +21,7 @@ from src.query_cache import QueryCache
 from src.rag_answerer import RAGAnswerer
 from src.evaluate import evaluate_question
 from src.opik_integration import OpikIntegration
+from src.eval_id_mapper import create_id_mapper
 
 
 def load_eval_dataset(csv_path: Path) -> List[Dict[str, str]]:
@@ -45,20 +46,28 @@ def load_eval_dataset(csv_path: Path) -> List[Dict[str, str]]:
     return questions
 
 
-def parse_relevant_doc_ids(doc_ids_str: str) -> List[str]:
-    """Parse relevant document IDs from comma-separated string.
+def parse_relevant_doc_ids(doc_ids_str: str, source_type: Optional[str] = None, id_mapper = None) -> List[str]:
+    """Parse relevant document IDs from comma-separated string and map to actual IDs.
     
     Args:
         doc_ids_str: Comma-separated string of document IDs
+        source_type: Source type hint (faq, ops, pdf, multi)
+        id_mapper: Optional ID mapper instance
         
     Returns:
-        List of document IDs
+        List of actual document IDs (mapped)
     """
     if not doc_ids_str or doc_ids_str.strip() == "":
         return []
     
     # Split by comma and strip whitespace
-    return [id.strip() for id in doc_ids_str.split(",") if id.strip()]
+    expected_ids = [id.strip() for id in doc_ids_str.split(",") if id.strip()]
+    
+    # Map to actual IDs if mapper is provided
+    if id_mapper:
+        return id_mapper.map_expected_ids(expected_ids, source_type)
+    
+    return expected_ids
 
 
 def calculate_aggregate_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -126,10 +135,10 @@ def main():
     
     print(f"Loaded {len(questions)} evaluation questions")
     
-    # Limit to first 5 questions for testing
-    if len(questions) > 5:
-        print(f"⚠️  Testing mode: Limiting to first 5 questions")
-        questions = questions[:5]
+    # Limit to first 10 questions for testing
+    if len(questions) > 10:
+        print(f"⚠️  Testing mode: Limiting to first 10 questions")
+        questions = questions[:10]
     
     # Initialize RAG components
     print("Initializing RAG system...")
@@ -148,6 +157,9 @@ def main():
     # Initialize OPIK integration (optional)
     opik = OpikIntegration(config)
     
+    # Initialize ID mapper
+    id_mapper = create_id_mapper(config)
+    
     # Run evaluation
     print("\nRunning evaluation...")
     print("=" * 80)
@@ -159,9 +171,10 @@ def main():
         question = q_data["question"]
         print(f"\n[{idx}/{len(questions)}] {question}")
         
-        # Parse relevant document IDs
+        # Parse relevant document IDs and map to actual IDs
         relevant_doc_ids_str = q_data.get("relevant_doc_ids", "") or q_data.get("expected_evidence_ids", "")
-        expected_doc_ids = parse_relevant_doc_ids(relevant_doc_ids_str)
+        source_type = q_data.get("expected_sources", "").split(",")[0].strip() if q_data.get("expected_sources") else None
+        expected_doc_ids = parse_relevant_doc_ids(relevant_doc_ids_str, source_type, id_mapper)
         
         # Get expected answer (optional)
         expected_answer = q_data.get("expected_answer", "")
@@ -229,9 +242,22 @@ def main():
     
     print(f"Aggregate metrics saved to: {metrics_path}")
     
-    # Log aggregate metrics to Comet if enabled
+    # Log aggregate metrics to Comet if enabled (this also flushes OPIK items)
     opik.log_aggregate_metrics(aggregate_metrics)
+    
+    # Close connections
     opik.close()
+    
+    # Print OPIK experiment info if available
+    if hasattr(opik, 'opik_experiment_name') and opik.opik_experiment_name:
+        print(f"\nOPIK Experiment: {opik.opik_experiment_name}")
+        print(f"OPIK Dataset: {opik.opik_dataset_name}")
+        if opik.opik_client:
+            try:
+                project_url = opik.opik_client.get_project_url(opik.config.comet_project_name)
+                print(f"OPIK Project URL: {project_url}")
+            except:
+                pass
 
 
 if __name__ == "__main__":

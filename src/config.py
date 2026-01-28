@@ -52,7 +52,11 @@ class Config(BaseModel):
     )
     faq_csv_path: str = Field(
         default="data/dispute_guideline_faq.csv",
-        description="Path to FAQ CSV file"
+        description="Path to FAQ CSV file (deprecated, use kb_csv_path)"
+    )
+    kb_csv_path: str = Field(
+        default="data/faq_kb.csv",
+        description="Path to knowledge base CSV file (15-column schema)"
     )
     ops_log_csv_path: str = Field(
         default="data/faq_data.csv",
@@ -94,6 +98,10 @@ class Config(BaseModel):
         default=False,
         description="Enable Comet logging for evaluation (default: False)"
     )
+    enable_chat_opik_logging: bool = Field(
+        default=True,
+        description="Enable OPIK logging for interactive chat sessions (default: True)"
+    )
     
     @field_validator("openai_api_key")
     @classmethod
@@ -130,6 +138,10 @@ class Config(BaseModel):
     def get_faq_csv_path(self) -> Path:
         """Get FAQ CSV path as Path object."""
         return Path(self.faq_csv_path)
+    
+    def get_kb_csv_path(self) -> Path:
+        """Get knowledge base CSV path as Path object."""
+        return Path(self.kb_csv_path)
     
     def get_ops_log_csv_path(self) -> Path:
         """Get operations log CSV path as Path object."""
@@ -180,6 +192,7 @@ def load_config(env_file: Optional[str] = None) -> Config:
             rag_search_timeout_sec=float(os.getenv("RAG_SEARCH_TIMEOUT_SEC", "3.0")),
             pdf_documents_dir=os.getenv("PDF_DOCUMENTS_DIR", "data/documents"),
             faq_csv_path=os.getenv("FAQ_CSV_PATH", "data/dispute_guideline_faq.csv"),
+            kb_csv_path=os.getenv("KB_CSV_PATH", "data/faq_kb.csv"),
             ops_log_csv_path=os.getenv("OPS_LOG_CSV_PATH", "data/faq_data.csv"),
             tenant_master_csv=os.getenv("TENANT_MASTER_CSV", "data/tenants.csv"),
             force_reindex_rental_qa=os.getenv("FORCE_REINDEX_RENTAL_QA", "false").lower() == "true",
@@ -189,6 +202,7 @@ def load_config(env_file: Optional[str] = None) -> Config:
             comet_project_name=os.getenv("COMET_PROJECT_NAME", "rental-rag-poc"),
             comet_workspace=os.getenv("COMET_WORKSPACE") or None,
             enable_comet_logging=os.getenv("ENABLE_COMET_LOGGING", "false").lower() == "true",
+            enable_chat_opik_logging=os.getenv("ENABLE_CHAT_OPIK_LOGGING", "true").lower() == "true",
         )
     
     return _config

@@ -2,8 +2,9 @@
 
 import json
 import time
+from datetime import date, datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Any
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -69,6 +70,69 @@ def _deduplicate_documents(documents: List[Document]) -> List[Document]:
         unique_docs.append(doc)
     
     return unique_docs
+
+
+def is_effective(metadata: Dict[str, Any], today: Optional[date] = None) -> bool:
+    """Check if document is effective based on effective_from/to dates.
+    
+    Rules:
+    - effective_from > today → False (exclude)
+    - effective_to < today → False (exclude)
+    - None → True (always effective)
+    
+    Args:
+        metadata: Document metadata dictionary
+        today: Current date (defaults to today if None)
+        
+    Returns:
+        True if document is currently effective, False otherwise
+    """
+    if today is None:
+        today = date.today()
+    
+    # Parse effective_from
+    effective_from_str = metadata.get('effective_from')
+    if effective_from_str:
+        try:
+            if isinstance(effective_from_str, str):
+                effective_from = datetime.strptime(effective_from_str, "%Y-%m-%d").date()
+            else:
+                effective_from = effective_from_str
+            if effective_from > today:
+                return False  # Not yet effective
+        except (ValueError, TypeError):
+            pass  # Invalid date, ignore
+    
+    # Parse effective_to
+    effective_to_str = metadata.get('effective_to')
+    if effective_to_str:
+        try:
+            if isinstance(effective_to_str, str):
+                effective_to = datetime.strptime(effective_to_str, "%Y-%m-%d").date()
+            else:
+                effective_to = effective_to_str
+            if effective_to < today:
+                return False  # Expired
+        except (ValueError, TypeError):
+            pass  # Invalid date, ignore
+    
+    return True  # Effective (no date restrictions or within range)
+
+
+def filter_effective_documents(documents: List[Document], today: Optional[date] = None) -> List[Document]:
+    """Filter documents to only include those that are currently effective.
+    
+    Args:
+        documents: List of Document objects
+        today: Current date (defaults to today if None)
+        
+    Returns:
+        Filtered list of effective documents
+    """
+    if today is None:
+        today = date.today()
+    
+    return [doc for doc in documents if is_effective(doc.metadata, today)]
 
 
 class VectorStoreManager:

@@ -1,9 +1,9 @@
 question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_ids,expected_answer,notes
 退去時の原状回復の基本方針は？,faq,faq,FAQ001,restoration,原状回復は借主の責任で行う必要があります,FAQコレクションから回答
 契約で禁止されている行為は？,pdf,pdf,contract.pdf p5,contract.pdf p5,契約で禁止されている行為について説明します,PDFコレクションから回答
-水漏れがあった場合の一次対応は？,ops,ops,LOG001,,水漏れが発生した場合の一次対応手順を説明します,運用ログから回答（stable_idは実行時に生成）
+水漏れがあった場合の一次対応は？,ops,ops,LOG001,e07dee1e3fe6fe84,水漏れが発生した場合の一次対応手順を説明します,運用ログから回答（stable_id: 水道設備:洗面台ホース水漏れ）
 原状回復の費用負担と契約条項の関係は？,multi,"faq,pdf",FAQ002 contract.pdf p12,"restoration_cost,contract.pdf p12",原状回復の費用負担と契約条項の関係について説明します,複数ソース統合
-過去の騒音トラブルの対応事例は？,ops,ops,LOG002 LOG003,,過去の騒音トラブルの対応事例を紹介します,運用ログから複数事例（stable_idは実行時に生成）
+過去の騒音トラブルの対応事例は？,ops,ops,LOG002 LOG003,48016bcd16dcf656,過去の騒音トラブルの対応事例を紹介します,運用ログから複数事例（stable_id: 騒音:早朝の生活音）
 契約期間の延長手続きは？,faq,faq,FAQ003,renewal,契約期間の延長手続きについて説明します,FAQコレクションから回答
 管理費の支払い方法は？,faq,faq,FAQ004,common_fee,管理費の支払い方法について説明します,FAQコレクションから回答
 ペット飼育の可否と条件は？,pdf,pdf,contract.pdf p8,ペット飼育の可否,ペットの飼育は禁止されています,FAQコレクションから回答（intent値を使用）

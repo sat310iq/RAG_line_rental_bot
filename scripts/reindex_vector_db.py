@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import load_config
 from src.document_loader import load_pdf_documents
-from src.csv_qa_loader import load_faq_csv, load_ops_log_csv
+from src.csv_qa_loader import load_ops_log_csv
+from src.kb_loader import load_kb_csv
 
 
 def save_bm25_corpus(documents: list[Document], output_path: Path) -> None:
@@ -130,9 +131,16 @@ def main():
     pdf_docs = load_pdf_documents(config)
     print(f"Loaded {len(pdf_docs)} PDF documents")
     
-    # FAQ CSV
-    faq_docs = load_faq_csv(config)
-    print(f"Loaded {len(faq_docs)} FAQ documents")
+    # Knowledge base CSV (15-column schema)
+    try:
+        kb_docs = load_kb_csv(config)
+        print(f"Loaded {len(kb_docs)} KB documents")
+    except ValueError as e:
+        print(f"Error loading KB CSV: {e}")
+        print("Falling back to legacy FAQ CSV...")
+        from src.csv_qa_loader import load_faq_csv
+        kb_docs = load_faq_csv(config)
+        print(f"Loaded {len(kb_docs)} legacy FAQ documents (deprecated)")
     
     # Operations log CSV (no tenant filtering during indexing)
     ops_docs = load_ops_log_csv(config, tenant_room=None)
@@ -141,10 +149,10 @@ def main():
     # Reindex each collection
     total_docs = 0
     
-    # FAQ collection
+    # KB/FAQ collection (using KB CSV)
     faq_count = reindex_collection(
         collection_name="rental_qa_faq",
-        documents=faq_docs,
+        documents=kb_docs,
         embeddings=embeddings,
         persist_directory=persist_directory,
         bm25_corpus_path=bm25_dir / "rental_qa_faq.jsonl"

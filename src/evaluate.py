@@ -53,9 +53,9 @@ def format_evidence_for_llm(evidence: List[str]) -> str:
 
 def evaluate_question(
     question: str,
-    expected_doc_ids: List[str],
-    expected_answer: Optional[str],
     rag_answerer: RAGAnswerer,
+    expected_doc_ids: Optional[List[str]] = None,
+    expected_answer: Optional[str] = None,
     llm_model: str = "gpt-4o-mini",
     tenant_contract_id: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -64,13 +64,13 @@ def evaluate_question(
     This function:
     1. Runs the RAG pipeline to get an answer
     2. Extracts retrieved document IDs from evidence
-    3. Calculates retrieval metrics (Recall@K, MRR)
+    3. Calculates retrieval metrics (Recall@K, MRR) if expected_doc_ids provided
     4. Evaluates answer quality using LLM (Relevance + Hallucination in single call)
     5. Checks for PII leakage and prohibited policy mentions (rule-based)
     
     Args:
         question: User question
-        expected_doc_ids: List of expected document IDs for retrieval evaluation
+        expected_doc_ids: List of expected document IDs for retrieval evaluation (optional)
         expected_answer: Expected answer text (optional, for reference)
         rag_answerer: RAG answerer instance
         llm_model: LLM model name for evaluation
@@ -86,12 +86,20 @@ def evaluate_question(
         # 2. Extract retrieved document IDs from evidence
         retrieved_ids = extract_doc_ids_from_evidence(answer.evidence)
         
-        # 3. Calculate retrieval metrics
-        retrieval_metrics = calculate_retrieval_metrics(
-            retrieved_ids,
-            expected_doc_ids,
-            k_values=[5, 10]
-        )
+        # 3. Calculate retrieval metrics (only if expected_doc_ids provided)
+        if expected_doc_ids:
+            retrieval_metrics = calculate_retrieval_metrics(
+                retrieved_ids,
+                expected_doc_ids,
+                k_values=[5, 10]
+            )
+        else:
+            # No expected IDs - set retrieval metrics to None
+            retrieval_metrics = {
+                "recall_at_5": None,
+                "recall_at_10": None,
+                "mrr": None,
+            }
         
         # 4. Format answer text for evaluation
         answer_text = f"{answer.conclusion} {answer.next_action} {answer.caveats}".strip()
@@ -112,7 +120,7 @@ def evaluate_question(
         prohibited_mentioned = detect_prohibited_policy(answer_text, question)
         
         # 8. Compile results
-        return {
+        result = {
             "question": question,
             "success": True,
             "recall_at_5": retrieval_metrics["recall_at_5"],
@@ -130,9 +138,10 @@ def evaluate_question(
             },
             "answer_text": answer_text,
             "retrieved_ids": retrieved_ids,
-            "expected_doc_ids": expected_doc_ids,
+            "expected_doc_ids": expected_doc_ids or [],
             "expected_answer": expected_answer,
         }
+        return result
         
     except Exception as e:
         return {

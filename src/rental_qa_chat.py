@@ -1,6 +1,8 @@
 """CLI interface for rental QA chat bot."""
 
 import sys
+import uuid
+import time
 from typing import Optional
 
 from src.config import load_config
@@ -8,6 +10,8 @@ from src.tenant_auth import TenantAuth
 from src.vector_store_manager import VectorStoreManager
 from src.query_cache import QueryCache
 from src.rag_answerer import RAGAnswerer
+from src.evaluate import evaluate_question
+from src.opik_integration import OpikIntegration
 
 
 def main():
@@ -32,14 +36,24 @@ def main():
         # Authenticate user
         print("本人確認を行います。")
         pin = input("PINを入力してください: ").strip()
+        room_number = input("部屋番号を入力してください: ").strip()
+        tenant_name = input("お名前を入力してください: ").strip()
         
         tenant_info = tenant_auth.authenticate_by_pin(pin)
         if tenant_info is None:
             print("認証に失敗しました。", file=sys.stderr)
             sys.exit(1)
         
-        # 認証成功（部屋番号・名前の表示は不要）
+        # 認証成功
         print("認証成功")
+        print(f"部屋番号: {room_number}, お名前: {tenant_name}")
+        
+        # セッション情報として保持（PINはセキュリティのため含めない）
+        session_info = {
+            'room_number': room_number,
+            'name': tenant_name
+        }
+        
         tenant_contract_id = None  # 認証テーブルなしのためNone
     except Exception as e:
         print(f"認証エラー: {e}", file=sys.stderr)
@@ -80,7 +94,22 @@ def main():
     print("特殊コマンド: '/health' - システム状態確認, '/clear' - キャッシュクリア")
     print()
     
+    # Initialize OPIK integration for chat logging (if enabled)
+    opik = None
+    session_thread_id = None
+    if config.enable_chat_opik_logging:
+        try:
+            # Force enable OPIK for chat even if enable_comet_logging is False
+            opik = OpikIntegration(config, force_enable=True)
+            session_thread_id = f"chat_session_{uuid.uuid4().hex[:8]}"
+            print(f"OPIKロギングが有効です (セッションID: {session_thread_id})")
+        except Exception as e:
+            print(f"警告: OPIK統合の初期化に失敗しました: {e}", file=sys.stderr)
+            print("OPIKロギングなしで続行します。", file=sys.stderr)
+            opik = None
+    
     # REPL loop
+    question_counter = 0
     while True:
         try:
             question = input("\n質問: ").strip()
@@ -112,7 +141,7 @@ def main():
             # Process question through RAG pipeline
             print("検索中...")
             try:
-                answer = rag_answerer.answer(question, tenant_contract_id)
+                answer = rag_answerer.answer(question, tenant_contract_id, tenant_info=session_info)
                 
                 # Display structured answer
                 print("\n" + "="*60)
@@ -131,6 +160,40 @@ def main():
                     print(answer.caveats)
                 print("="*60)
                 
+                # エスカレーションデータがあれば表示
+                if hasattr(answer, 'escalation_data') and answer.escalation_data:
+                    import json
+                    print("\n" + "="*60)
+                    print("【管理会社・オーナー連携用データ】")
+                    print(json.dumps(answer.escalation_data, ensure_ascii=False, indent=2))
+                    print("="*60)
+                
+                # Evaluate and log to OPIK (if enabled)
+                if opik is not None and config.enable_chat_opik_logging:
+                    try:
+                        question_counter += 1
+                        # Evaluate answer (without expected_doc_ids for chat)
+                        result = evaluate_question(
+                            question=question,
+                            expected_doc_ids=None,  # No expected IDs for interactive chat
+                            expected_answer=None,
+                            rag_answerer=rag_answerer,
+                            llm_model=config.openai_model,
+                            tenant_contract_id=tenant_contract_id
+                        )
+                        
+                        # Generate question_id and add session metadata
+                        result["question_id"] = f"CHAT_{int(time.time())}_{question_counter}"
+                        result["category"] = "interactive_chat"
+                        result["thread_id"] = session_thread_id
+                        
+                        # Log to OPIK with experiment_type="chat"
+                        opik.log_evaluation_result(result, experiment_type="chat")
+                    except Exception as e:
+                        print(f"警告: OPIKロギングに失敗しました: {e}", file=sys.stderr)
+                        import traceback
+                        traceback.print_exc()
+                
             except Exception as e:
                 print(f"エラー: {e}", file=sys.stderr)
                 import traceback
@@ -143,6 +206,14 @@ def main():
             print(f"エラーが発生しました: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc()
+    
+    # Close OPIK integration at end of session
+    if opik is not None:
+        try:
+            opik.close()
+            print("OPIKロギングを終了しました。")
+        except Exception as e:
+            print(f"警告: OPIK終了処理に失敗しました: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
