@@ -33,6 +33,55 @@ bd dep add <child> <parent>  # Link tasks (child depends on parent)
 5. Claim work: `bd update <id> --status=in_progress`
 6. Complete work: `bd close <id>`
 
+## Planモードでのタスク作成
+
+**PlanモードでBeadsタスクを作成する際は、必ずテンプレートを使用してください。**
+
+### 手順
+
+1. **タスクタイプの判定**
+   - 通常タスク（新機能、改善、リファクタリング）→ `beads-task-template.md`
+   - バグ調査（原因特定、障害対応）→ `bug-triage-template.md`
+
+2. **テンプレートの読み込み**
+   - `.cursor/rules/beads-task-template.md` または `.cursor/rules/bug-triage-template.md` を読み込む
+
+3. **テンプレートに基づいてdescriptionを生成**
+   - ユーザーから取得した情報（Objective, Context, Constraints等）をテンプレートに埋める
+   - **テンプレートの全セクションを含める**（Objective, Success Criteria, Decision Hygiene Protocol, Deliverables, Constraints, Test Plan, Execution Plan, Reporting Format）
+   - バグ調査の場合は**Hypothesis Table（仮説3つ以上）**が必須
+
+4. **Beads Issueとして作成**
+   - `bd create`コマンドが使える場合: `bd create --title="..." --type=[task|bug] --priority=[0|1|2] --description="[生成したdescription]"`
+   - `bd`コマンドが使えない場合: `.beads/issues.jsonl`にJSON Lines形式で直接追加（詳細は`.cursor/rules/beads-plan-mode.md`を参照）
+
+### テンプレートファイル
+
+- 通常タスク: `.cursor/rules/beads-task-template.md`
+- バグ調査: `.cursor/rules/bug-triage-template.md`
+- Planモード詳細手順: `.cursor/rules/beads-plan-mode.md`
+
+### 重要ルール
+
+- ✅ テンプレートの**すべてのセクション**を含める
+- ✅ 仮説は最低3つ（バグ調査の場合）
+- ✅ テスト計画は**先に**書く
+- ✅ Decision Hygiene Protocolを必ず含める
+- ✅ 適切なpriorityを設定（0=最高, 1=高, 2=中）
+
+### 評価方法と結果の見方
+
+評価スクリプト（`scripts/run_simple_eval.py`）を実行すると、以下のメトリクスが計算されます：
+
+- **Recall@5 / Recall@10**: 期待されるドキュメントが検索結果の上位5件/10件に含まれる割合
+- **MRR**: 期待されるドキュメントが最初に出現する順位の逆数の平均
+- **Relevance**: 回答が質問に関連しているか（LLM評価）
+- **Hallucination**: 回答に根拠情報に基づかない情報が含まれる割合（LLM評価）
+- **PII Leakage Rate**: 個人情報が漏洩した質問の割合
+- **Prohibited Mention Rate**: 禁止事項が言及された質問の割合
+
+評価結果は`data/eval/`ディレクトリに保存され、Comet ML (OPIK)にも記録されます。詳細は`README.md`の「評価メトリクスの見方」セクションを参照してください。
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.

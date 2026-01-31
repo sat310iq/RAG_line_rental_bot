@@ -114,6 +114,25 @@ python scripts/analyze_eval_results.py
 
 評価メトリクスはComet ML (OPIK)にも記録されます。`ENABLE_COMET_LOGGING=true`を設定している場合、`RAG_POC`プロジェクトのExperimentsタブで確認できます。
 
+#### 評価メトリクスの見方
+
+評価スクリプトは以下のメトリクスを計算します：
+
+- **Recall@5 / Recall@10**: 期待されるドキュメントが検索結果の上位5件/10件に含まれる割合（0-1、高いほど良い）
+- **MRR (Mean Reciprocal Rank)**: 期待されるドキュメントが最初に出現する順位の逆数の平均（0-1、高いほど良い）
+- **Relevance**: 回答が質問に関連しているか（0-1、高いほど良い）
+- **Hallucination**: 回答に根拠情報に基づかない情報が含まれる割合（0-1、低いほど良い）
+- **PII Leakage Rate**: 個人情報が漏洩した質問の割合（0-1、低いほど良い）
+- **Prohibited Mention Rate**: 禁止事項が言及された質問の割合（0-1、低いほど良い）
+
+**目標値**:
+- Recall@5: 0.50以上（現在: 0.25）
+- Hallucination: 0.50以下（現在: 0.53）
+- PII Leakage Rate: 0.00（現在: 0.00）✅
+- Prohibited Mention Rate: 0.10以下（現在: 0.10）✅
+
+評価結果の詳細は`data/eval/eval_analysis.json`を確認してください。検索失敗やハルシネーションのパターンが分析されています。
+
 ### スモークテスト
 
 ```bash
