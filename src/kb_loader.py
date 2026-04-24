@@ -1,4 +1,4 @@
-"""Knowledge base CSV loader with 15-column schema."""
+"""Knowledge base CSV loader with 15-column schema plus optional metadata."""
 
 import csv
 from datetime import date, datetime
@@ -25,6 +25,32 @@ REQUIRED_COLUMNS = [
     "escalation_reason",
     "handoff_message",
     "notes",
+]
+
+# Optional columns for hierarchical RAG (defaulted when missing/blank)
+OPTIONAL_COLUMNS = [
+    "contract_id",
+    "topic",
+    "precedence",
+    "override_flag",
+    "citations",
+    "fallback_to_master",
+    "answer_complete",
+    "effective_date",
+    "version",
+    "negative_keywords",
+    "negative_penalty",
+    # KB fast path (must be listed or CSV columns are silently ignored)
+    "canonical_question",
+    "keywords_primary",
+    "keywords_secondary",
+    "synonyms",
+    "exclude_keywords",
+    "fast_path_enabled",
+    "needs_clarification_when_short",
+    "clarification_prompt",
+    "clarification_options",
+    "clarification_examples",
 ]
 
 
@@ -64,8 +90,20 @@ def parse_required_inputs(inputs_str: Optional[str]) -> List[str]:
     return [item for item in inputs if item]
 
 
+def parse_bool(value: Optional[str], default: bool) -> bool:
+    """Parse boolean-like string to bool with default."""
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in ("true", "1", "yes", "y"):
+        return True
+    if normalized in ("false", "0", "no", "n"):
+        return False
+    return default
+
+
 def load_kb_csv(config: Config) -> List[Document]:
-    """Load 15-column knowledge base CSV.
+    """Load 15-column knowledge base CSV with optional metadata columns.
     
     Validates header, parses types, returns Documents.
     Does NOT perform date validation (that's done at retrieval time).
@@ -102,7 +140,7 @@ def load_kb_csv(config: Config) -> List[Document]:
                     f"Found columns: {sorted(actual_columns)}"
                 )
             
-            extra_columns = actual_columns - required_columns_set
+            extra_columns = actual_columns - required_columns_set - set(OPTIONAL_COLUMNS)
             if extra_columns:
                 print(f"Warning: KB CSV has extra columns (ignored): {sorted(extra_columns)}")
             
@@ -137,6 +175,35 @@ def load_kb_csv(config: Config) -> List[Document]:
                     # ChromaDB doesn't support list types in metadata, so convert to string
                     required_inputs_str = ','.join(required_inputs) if required_inputs else ''
                     
+                    # Optional metadata for hierarchical RAG
+                    contract_id = (row.get('contract_id') or '').strip()
+                    topic = (row.get('topic') or '').strip() or "unknown"
+                    precedence_str = (row.get('precedence') or '').strip()
+                    try:
+                        precedence = int(precedence_str) if precedence_str else 100
+                    except ValueError:
+                        precedence = 100
+                    override_flag = (row.get('override_flag') or '').strip() or "addition"
+                    citations = (row.get('citations') or '').strip()
+                    fallback_to_master = parse_bool(row.get('fallback_to_master'), True)
+                    answer_complete = parse_bool(row.get('answer_complete'), False)
+                    effective_date = (row.get('effective_date') or '').strip()
+                    version = (row.get('version') or '').strip()
+                    negative_keywords = (row.get('negative_keywords') or '').strip()
+                    negative_penalty = (row.get('negative_penalty') or '').strip()
+                    canonical_question = (row.get('canonical_question') or '').strip()
+                    keywords_primary = (row.get('keywords_primary') or '').strip()
+                    keywords_secondary = (row.get('keywords_secondary') or '').strip()
+                    synonyms_kw = (row.get('synonyms') or '').strip()
+                    exclude_keywords_fp = (row.get('exclude_keywords') or '').strip()
+                    fast_path_enabled = parse_bool(row.get('fast_path_enabled'), False)
+                    needs_clarification_when_short = parse_bool(
+                        row.get('needs_clarification_when_short'), False
+                    )
+                    clarification_prompt = (row.get('clarification_prompt') or '').strip()
+                    clarification_options = (row.get('clarification_options') or '').strip()
+                    clarification_examples = (row.get('clarification_examples') or '').strip()
+
                     doc = Document(
                         page_content=page_content,
                         metadata={
@@ -156,6 +223,29 @@ def load_kb_csv(config: Config) -> List[Document]:
                             'escalation_reason': escalation_reason,
                             'handoff_message': handoff_message,
                             'notes': notes,
+                            'contract_id': contract_id,
+                            'topic': topic,
+                            'precedence': precedence,
+                            'override_flag': override_flag,
+                            'citations': citations,
+                            'fallback_to_master': fallback_to_master,
+                            'answer_complete': answer_complete,
+                            'effective_date': effective_date,
+                            'version': version,
+                            'negative_keywords': negative_keywords,
+                            'negative_penalty': negative_penalty,
+                            'canonical_question': canonical_question,
+                            'keywords_primary': keywords_primary,
+                            'keywords_secondary': keywords_secondary,
+                            'synonyms': synonyms_kw,
+                            'exclude_keywords': exclude_keywords_fp,
+                            'fast_path_enabled': 'true' if fast_path_enabled else 'false',
+                            'needs_clarification_when_short': (
+                                'true' if needs_clarification_when_short else 'false'
+                            ),
+                            'clarification_prompt': clarification_prompt,
+                            'clarification_options': clarification_options,
+                            'clarification_examples': clarification_examples,
                             'source': str(csv_path),
                             'row_index': row_idx,  # For citations
                         }
