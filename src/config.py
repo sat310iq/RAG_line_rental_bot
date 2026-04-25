@@ -44,13 +44,61 @@ class Config(BaseSettings):
         description="Documents to retrieve per source (hybrid top-k; 16 covers ~13 FAQ rows + margin vs local/cloud drift)",
     )
     rag_rerank_candidates: int = Field(default=20, description="Rerank candidates")
-    rag_rerank_top_n: int = Field(default=3, description="Top documents after rerank")
+    rag_rerank_top_n: int = Field(
+        default=4,
+        description="Top documents after rerank (slightly wider head for PDF+KB merge)",
+    )
     rag_search_timeout_sec: float = Field(default=3.0, description="Search timeout seconds")
     csv_score_threshold: float = Field(
         default=0.40,
         description="CSV match threshold; keep aligned with LOCAL_VS_CLOUDRUN.md",
     )
-    pdf_score_threshold: float = Field(default=0.60, description="PDF match threshold")
+    pdf_score_threshold: float = Field(
+        default=0.58,
+        description="PDF match threshold (slightly relaxed vs 0.60 for recall; override path guarded elsewhere)",
+    )
+    pdf_empty_retry_score_threshold: float = Field(
+        default=0.52,
+        ge=0.0,
+        le=1.0,
+        description="PDF threshold used only on KB-empty master retry (answer() second-stage search).",
+    )
+    kb_empty_try_master_pdf: bool = Field(
+        default=True,
+        description="If True and KB path had no deal+master hits, retry hierarchical search with master PDF enabled.",
+    )
+    fallback_decision_path: str = Field(
+        default="fallback",
+        description="decision_path attached when returning fallback_message after retrieval misses.",
+    )
+    csv_keyword_override_min_hits: int = Field(
+        default=2,
+        ge=1,
+        description="Minimum keyword+keywords_primary token hits for CSV keyword override (unless fusion floor met).",
+    )
+    csv_keyword_override_min_fusion_score: float = Field(
+        default=0.36,
+        ge=0.0,
+        le=1.0,
+        description="If override token hits are below min_hits but fusion score (post negative penalty) meets this, allow override.",
+    )
+    csv_keyword_override_use_primary: bool = Field(
+        default=True,
+        description="If True, include keywords_primary in CSV keyword override hit count (aligned with kb_fast_path signals).",
+    )
+    responder_kb_alignment_enabled: bool = Field(
+        default=True,
+        description="If True, responder applies question–KB-metadata alignment gate for kb_faq top doc.",
+    )
+    responder_kb_min_keyword_hits: int = Field(
+        default=1,
+        ge=1,
+        description="Min pipe-field keyword hits vs question for alignment when query is not 'short' (see kb_fast_path_short_max_len).",
+    )
+    responder_misalignment_fallback_message: str = Field(
+        default="該当が不十分なため、詳細は管理会社にお問い合わせください。",
+        description="Plain text when responder rejects weak KB–question alignment.",
+    )
 
     pdf_documents_dir: str = Field(default="data/documents", description="PDF/TXT documents dir")
     master_txt_files: str = Field(
@@ -128,8 +176,8 @@ class Config(BaseSettings):
         ge=1,
     )
     kb_fast_path_ambiguity_delta: int = Field(
-        default=3,
-        description="If top two intent scores differ by less than this, return clarification instead.",
+        default=2,
+        description="If top two intent scores differ by less than this, return clarification instead (tighter = more clar when top-2 are close).",
         ge=0,
     )
     kb_fast_path_short_max_len: int = Field(
