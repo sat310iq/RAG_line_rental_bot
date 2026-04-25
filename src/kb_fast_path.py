@@ -29,6 +29,15 @@ DEFAULT_CLARIFICATION_FALLBACK = (
     "いくつかの案内が考えられます。料金・契約のこと、設備トラブル、どちらに近いか教えてください。"
 )
 
+AMBIGUOUS_TOPIC_PATTERNS = (
+    "水道の件",
+    "修繕について",
+    "契約について",
+    "更新の件",
+    "騒音のことで",
+)
+AMBIGUOUS_TOPIC_TERMS = ("水道", "修繕", "契約", "更新", "騒音", "ガス", "証明書")
+
 
 @dataclass
 class KBFastPathResult:
@@ -136,6 +145,22 @@ def _meta_bool(meta: Dict[str, Any], key: str, default: bool = False) -> bool:
     return default
 
 
+def _is_ambiguous_topic_query(question: str, q_norm: str, detail: Dict[str, Any]) -> bool:
+    q = (question or "").strip()
+    if not q:
+        return False
+    if any(p in q for p in AMBIGUOUS_TOPIC_PATTERNS):
+        return True
+
+    has_topic_suffix = any(x in q for x in ("の件", "について", "のことで"))
+    topic_hits = sum(1 for t in AMBIGUOUS_TOPIC_TERMS if t in q)
+    primary_hits = int(detail.get("primary_hits") or 0)
+    secondary_hits = int(detail.get("secondary_hits") or 0)
+    exact_bonus = int(detail.get("exact_primary_bonus") or 0)
+    weak_signal = (primary_hits + secondary_hits) <= 1 and exact_bonus == 0
+    return has_topic_suffix and topic_hits == 1 and weak_signal
+
+
 def _legal_skip(question: str, config: Config) -> bool:
     raw = (config.kb_fast_path_legal_skip_substrings or "").strip()
     if not raw:
@@ -240,6 +265,33 @@ def try_kb_fast_path(
     short = len(q_norm) <= config.kb_fast_path_short_max_len
 
     if not candidates or candidates[0][0] < threshold:
+        if candidates:
+            top_score, top_det, top_doc = candidates[0]
+            top_meta = dict(top_doc.metadata or {})
+            clar_prompt = (top_meta.get("clarification_prompt") or "").strip()
+            clar_options = _split_pipe_field(str(top_meta.get("clarification_options") or ""))
+            clar_examples = _split_pipe_field(str(top_meta.get("clarification_examples") or ""))
+            if (
+                top_score > 0
+                and clar_prompt
+                and _is_ambiguous_topic_query(question, q_norm, top_det)
+            ):
+                clar_reason = "ambiguous_topic"
+                clar_numeric = clarification_numeric_queries(clar_options, clar_examples)
+                text = build_clarification_message(clar_prompt, clar_options, clar_examples)
+                return KBFastPathResult(
+                    kind="clarification",
+                    text=text,
+                    intent=str(top_meta.get("intent") or ""),
+                    normalized_query=q_norm,
+                    match_detail={
+                        "reason": clar_reason,
+                        "clarification_reason": clar_reason,
+                        "top_score": top_score,
+                        "threshold": threshold,
+                        "clarification_numeric_queries": clar_numeric,
+                    },
+                )
         logger.info(
             "kb_fast_path_miss normalized=%s top_score=%s threshold=%s",
             json.dumps(q_norm[:200], ensure_ascii=False),
@@ -310,6 +362,29 @@ def try_kb_fast_path(
     }
 
     clar_numeric = clarification_numeric_queries(clar_options, clar_examples)
+    ambiguous_topic = (
+        bool(clar_prompt)
+        and _is_ambiguous_topic_query(question, q_norm, top_det)
+        and not is_specific_even_if_short
+    )
+    log_payload["ambiguous_topic"] = ambiguous_topic
+
+    if ambiguous_topic:
+        clar_reason = "ambiguous_topic"
+        log_payload["clarification_reason"] = clar_reason
+        log_payload["clarification_numeric_queries"] = clar_numeric
+        text = build_clarification_message(clar_prompt, clar_options, clar_examples)
+        logger.info(
+            "kb_fast_path_clarification %s",
+            json.dumps({**log_payload, "event": "kb_fast_path_clarification"}, ensure_ascii=False),
+        )
+        return KBFastPathResult(
+            kind="clarification",
+            text=text,
+            intent=intent,
+            normalized_query=q_norm,
+            match_detail={**log_payload, "reason": clar_reason},
+        )
 
     if ambiguous:
         clar_reason = "ambiguity"

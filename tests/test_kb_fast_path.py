@@ -137,6 +137,29 @@ def test_legal_skip_misses(cfg):
     assert r.kind == "miss"
 
 
+def test_vague_repair_question_clarifies(cfg):
+    docs = load_kb_csv(cfg)
+    r = try_kb_fast_path("修繕について教えてください", cfg, docs)
+    assert r.kind == "clarification"
+    assert r.intent == "設備_故障"
+    assert r.match_detail.get("clarification_reason") == "ambiguous_topic"
+
+
+def test_vague_water_question_clarifies(cfg):
+    docs = load_kb_csv(cfg)
+    r = try_kb_fast_path("水道の件なんですが", cfg, docs)
+    assert r.kind == "clarification"
+    assert r.intent == "生活_水道請求"
+    assert r.match_detail.get("clarification_reason") == "ambiguous_topic"
+
+
+def test_water_billing_specific_still_hits(cfg):
+    docs = load_kb_csv(cfg)
+    r = try_kb_fast_path("水道料金の明細を確認したい", cfg, docs)
+    assert r.kind == "hit"
+    assert r.intent == "生活_水道請求"
+
+
 def test_fast_path_disabled(cfg):
     docs = load_kb_csv(cfg)
     cfg.kb_fast_path_enabled = False
