@@ -99,3 +99,20 @@ def test_infer_actual_route_fallback_used_is_fallback(re):
     object.__setattr__(ans, "fallback_used", True)
     cfg = type("Cfg", (), {"kb_fast_path_short_max_len": 10, "fallback_message": "fallback"})()
     assert re.infer_actual_route("auto", ans, "q", cfg) == "fallback"
+
+
+def test_infer_failure_tags_core_cases(re):
+    rec = {
+        "expected_route": "escalation",
+        "actual_route": "rule",
+        "decision_path": "rule",
+        "question": "家賃減額を請求できますか？",
+        "answer": "ガス料金・請求についてご案内します",
+        "fallback_used": True,
+        "expected_source": "master_only",
+    }
+    tags = re.infer_failure_tags(rec)
+    assert "should_escalate_but_answered" in tags
+    assert "fallback_as_rule" in tags
+    assert "wrong_intent_match" in tags
+    assert "overbroad_rule" in tags

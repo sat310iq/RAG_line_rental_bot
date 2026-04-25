@@ -749,6 +749,28 @@ class RAGAnswerer:
                 return True
         
         return False
+
+    def _has_low_relevance_signal(self, question: str, docs: List[Document]) -> bool:
+        """Detect weak grounding for non-FAQ RAG answers and fail closed."""
+        if not docs:
+            return True
+        # RAG relevance guard targets non-FAQ paths; FAQ guard is handled in responder.
+        non_faq_docs = [d for d in docs if d.metadata.get("type") != "kb_faq"]
+        if not non_faq_docs:
+            return False
+        checked = non_faq_docs[:2]
+        for doc in checked:
+            haystack = "\n".join(
+                s for s in (doc.page_content or "", str(doc.metadata.get("answer") or "")) if s
+            )
+            if has_content_keyword_hit(
+                question,
+                haystack,
+                stopwords=self.config.question_term_stopwords or None,
+                synonyms=self.config.question_term_synonyms or None,
+            ):
+                return False
+        return True
     
     def _select_docs_for_answer(self, reranked: List[Document]) -> List[Document]:
         """Select documents to use for answer generation.
@@ -1190,6 +1212,28 @@ class RAGAnswerer:
             tenant_info = self.tenant_auth.get_tenant_info(tenant_contract_id)
             if tenant_info:
                 tenant_context = f"\n入居者情報: {tenant_info['name']}様 ({tenant_info['room_number']}号室)"
+
+        if effective_retrieval_used and self._has_low_relevance_signal(question, docs_for_answer):
+            msg = "該当する情報を確認できませんでした。管理会社へお問い合わせください。"
+            answer = AnswerSchema(
+                items=[AnswerItem(text=msg, citation=evidence_ids[0] if evidence_ids else "")],
+                summary=msg,
+                evidence=evidence_ids,
+                next_action="管理会社へお問い合わせください",
+                caveats="根拠と質問の整合が低いため、フォールバックしました。",
+            )
+            object.__setattr__(answer, "retrieved_doc_meta", retrieved_doc_meta)
+            object.__setattr__(answer, "rag_irrelevant_context", True)
+            self._persist_to_cache(cache_key, answer, persist_cache)
+            self._attach_decision_meta(
+                answer,
+                system=decision["system"],
+                decision_path="fallback",
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                retrieval_used=True,
+            )
+            object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+            return answer
         
         # Add warning if evidence is insufficient
         if insufficient_evidence:

@@ -156,6 +156,34 @@ def route_match_relaxed(expected: str, actual: str) -> bool:
     return expected in layer and actual in layer
 
 
+def infer_failure_tags(rec: Dict[str, object]) -> List[str]:
+    """Attach failure tags used by post-run prioritization."""
+    tags: List[str] = []
+    expected_route = str(rec.get("expected_route") or "")
+    actual_route = str(rec.get("actual_route") or "")
+    decision_path = str(rec.get("decision_path") or "")
+    question = str(rec.get("question") or "")
+    answer = str(rec.get("answer") or "")
+    fallback_used = bool(rec.get("fallback_used"))
+
+    if expected_route == "escalation" and actual_route != "escalation":
+        tags.append("should_escalate_but_answered")
+    if expected_route == "clarification" and actual_route in ("rule", "fast_path", "rag"):
+        tags.append("needs_clarification")
+    if fallback_used and decision_path == "rule":
+        tags.append("fallback_as_rule")
+    if actual_route in ("rule", "fast_path") and str(rec.get("expected_source") or "") == "master_only":
+        tags.append("overbroad_rule")
+    if decision_path == "rag" and (fallback_used or bool(rec.get("rag_irrelevant_context"))):
+        tags.append("rag_irrelevant_context")
+    if (
+        "ガス料金" in answer
+        and any(t in question for t in ("家賃", "減額", "喫煙", "清掃"))
+    ):
+        tags.append("wrong_intent_match")
+    return sorted(set(tags))
+
+
 def _kpi_rate_dict(
     numerator: int,
     denominator: int,
@@ -523,6 +551,9 @@ def main() -> None:
                     "pass_fail": "needs_review",
                     "reviewer_note": "",
                 }
+                rec["failure_tags"] = infer_failure_tags(rec)
+                if rec["failure_tags"]:
+                    rec["fix_required"] = True
                 all_records.append(rec)
                 out_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 sys_summary = summary["systems"].setdefault(
@@ -676,6 +707,13 @@ def main() -> None:
     scored_path = PROJECT_ROOT / "data" / "eval" / "ab_scored_summary.json"
     with open(scored_path, "w", encoding="utf-8") as sf:
         json.dump({"run_id": run_id, "scored": scored}, sf, ensure_ascii=False, indent=2)
+
+    failure_tag_counts: Dict[str, int] = {}
+    for rec in all_records:
+        for tag in rec.get("failure_tags") or []:
+            k = str(tag)
+            failure_tag_counts[k] = failure_tag_counts.get(k, 0) + 1
+    summary["failure_tag_counts"] = failure_tag_counts
 
     summary["route_metrics"] = build_route_metrics(all_records, d_auto_samples=d_auto_samples)
     rm = summary["route_metrics"]
