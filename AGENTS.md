@@ -69,6 +69,15 @@ bd dep add <child> <parent>  # Link tasks (child depends on parent)
 - ✅ Decision Hygiene Protocolを必ず含める
 - ✅ 適切なpriorityを設定（0=最高, 1=高, 2=中）
 
+### ローカル＝クラウドのデプロイルール（固定）
+
+**ルール**: ローカル（MacPC）で確認した振る舞いをそのままクラウド（Cloud Run）にデプロイする。今後もこの原則を守る。
+
+- **設定の一致**: コードの既定値（`src/config.py`）はローカルの `env.example` / `.env` と整合させる。Cloud Run で環境変数を追加しない限り、ローカルと同じ既定値が使われるようにする。
+- **データの一致**: デプロイ前に必ずローカルで `python3 scripts/reindex_vector_db.py` を実行し、その直後の `data/`（`data/vector_store`, `data/faq_kb.csv` 等）でビルドする。`deploy_webhook.sh` の事前チェック（vector_store の存在）を守る。
+- **差分の禁止**: クラウド専用で「ローカルと違う閾値・取得件数」をコードに埋め込まない。クラウド用の調整は環境変数で行い、既定値はローカルと同じにする。
+- 詳細: `docs/LOCAL_VS_CLOUDRUN.md` を参照。
+
 ### 評価方法と結果の見方
 
 評価スクリプト（`scripts/run_simple_eval.py`）を実行すると、以下のメトリクスが計算されます：
@@ -191,24 +200,117 @@ bd dep add <child> <parent>  # Link tasks (child depends on parent)
 - `src/opik_integration.py`: Fixed OPIK project configuration
 - `.env`: Set OPIK_PROJECT_NAME to RAG_POC
 
-### Evaluation Metrics Interpretation
+### Metrics v2 and Decision Hygiene
 
-#### Recall@5
-- **Meaning**: Percentage of expected documents found in top 5 search results
-- **Good**: > 0.5 (at least half of expected documents found)
-- **Poor**: < 0.3 (most expected documents not found)
-- **Common Issues**: ID format mismatch, search query quality, document indexing
+#### Metrics v2 Overview
 
-#### Hallucination
-- **Meaning**: Amount of information in answer not supported by evidence (0-1, higher = worse)
-- **Good**: < 0.3 (mostly fact-based)
-- **Poor**: > 0.7 (many unsupported claims)
-- **Common Causes**: Insufficient search results, weak prompt constraints, LLM overconfidence
+このプロジェクトは**Metrics v2（Decision Hygiene準拠）**を使用しています。Metrics v2は以下の4つの原則に基づいています：
 
-#### Relevance
-- **Meaning**: How well answer addresses the question (0-1, higher = better)
-- **Good**: > 0.8 (answer is highly relevant)
-- **Poor**: < 0.5 (answer doesn't address question well)
+1. **診断可能性（Diagnostic）**: 数値が悪いとき「どこを直せばよいか」が分かる
+2. **役割分離（Layered）**: Retrieval / Evaluation / Generation / Safety を混ぜない
+3. **質問タイプ条件付き（Conditional）**: すべての質問に同じ指標を当てない
+4. **目標値に意味がある（Actionable）**: 改善 or 放置の判断に使える
+
+#### Question Typing（質問タイプ分類）
+
+すべての指標は質問タイプに条件付けられます。質問タイプは以下6種類：
+
+- `fact_lookup`: 単一事実を尋ねる質問
+- `procedure`: 手続き・フローを尋ねる質問
+- `policy_confirmation`: 可否確認（〜できますか）
+- `policy_enumeration`: 禁止/義務の列挙
+- `explanation`: 理由・背景説明
+- `open_ended`: 曖昧・相談系
+
+質問タイプはLLMベースで自動分類され、`eval_questions.csv`の`question_type`列で手動オーバーライド可能です。
+
+#### Decision Rules（意思決定ルール）
+
+評価が悪いときは、以下の順序で意思決定を行います：
+
+1. **IDMatchRate < 0.9?** → 評価設計を直す（検索触るな）
+2. **Recall@5 < 50%?** → Retrieval or Corpus
+3. **Completeness < 1.0?** → Generation制御
+4. **EvidenceBinding < 0.8?** → Prompt / Schema / Post-process
+5. **Hallucination.fact_error > 0?** → 即ブロック
+
+詳細は`src/decision_rules.py`を参照してください。
+
+#### OPIK運用ルール（Decision Hygiene版）
+
+**Rule 1**: 評価が悪いとき、まず metrics の意味を疑え
+
+- ID normalization success rate < 0.9 の場合は評価設計の問題
+- Retrievalを触る前に評価設計を確認
+
+**Rule 2**: IDMatchRate < 0.9 のとき Retrieval を触るな
+
+- 評価定義が壊れている可能性が高い
+- `eval_questions.csv`の期待IDを確認
+
+**Rule 3**: Hallucination は分解せよ。1数値で語るな
+
+- `hallucination_fact_error`: 明確な虚偽（0.0が必須）
+- `hallucination_unsourced_claim`: 根拠なし断定
+- `hallucination_overreach`: 証拠外推論
+
+**Rule 4**: 質問タイプ未定義の評価は無効
+
+- すべての評価は質問タイプに条件付き
+- 質問タイプが`unknown`の場合は警告を出力
+
+#### Evaluation Metrics Interpretation（Metrics v2）
+
+##### Retrieval Metrics
+
+- **Recall@5**: 期待されるドキュメントが検索結果の上位5件に含まれる割合
+  - **Good**: ≥ 0.5
+  - **Poor**: < 0.4（評価設計疑い）または < 0.3（検索問題）
+  - **質問タイプ別**: `recall_at_5.fact_lookup`, `recall_at_5.policy_enumeration` など
+
+- **Hit@1**: Single-source質問（fact_lookup）専用
+  - 単一期待ドキュメントが1位に来たか
+
+##### Evaluation Metrics
+
+- **ID Normalization Success Rate**: IDマッピング成功率
+  - **< 0.9**: 評価設計が壊れている → Retrieval改善は禁止
+  - **≥ 0.9**: 評価設計は健全 → Retrieval改善を検討
+
+##### Generation Metrics
+
+- **Answer Completeness**: 質問タイプ別の完全性
+  - `policy_enumeration`: 列挙項目数 ≥ 3
+  - `procedure`: 手順ステップ数 ≥ 2
+  - `fact_lookup`: 単一明確回答
+
+- **Evidence Binding Rate**: 引用付き項目の割合
+  - 目標: `policy_enumeration` ≥ 0.8, `procedure` ≥ 0.7
+
+##### Safety Metrics
+
+- **Hallucination（分解）**:
+  - `hallucination_fact_error`: **0.0が必須**（明確な虚偽は許容不可）
+  - `hallucination_unsourced_claim`: 根拠なし断定（低いほど良い）
+  - `hallucination_overreach`: 証拠外推論（低いほど良い）
+
+- **Prohibited Mention Rate（typed）**:
+  - `confirmation`: 低いほど良い（可否確認質問）
+  - `enumeration`: 高いほど良い（列挙質問）
+
+#### Beads / INC / ADR との接続
+
+- **metrics v2改修** → ADR（Architecture Decision Record）
+- **評価破綻** → INC（Incident Report、evaluation incident）
+- **閾値変更** → ADR + metrics version bump
+
+評価レポート生成:
+
+```bash
+python scripts/generate_eval_report.py
+```
+
+生成されたレポートは`docs/eval/OPIK_EVAL_REPORT_*.md`に保存され、Decision Hygieneテンプレートに準拠しています。
 
 ### Troubleshooting Guide
 
@@ -229,4 +331,263 @@ bd dep add <child> <parent>  # Link tasks (child depends on parent)
 2. Check experiments tab: Data appears under Experiments, not Traces
 3. Verify API key: Ensure `COMET_API_KEY` is set correctly
 4. Check logs: Look for OPIK initialization messages in evaluation output
+
+---
+
+## Project-specific Cursor Rules
+
+# Cursor Operating Rules for rental_rag_poc
+
+## Mission
+
+Cursor must act as a safe development orchestrator, not only a code generator.
+
+The priorities are:
+
+1. Keep changes small.
+2. Preserve evaluation reliability.
+3. Avoid deployment and data-management mistakes.
+4. Make every change observable and reviewable.
+
+---
+
+## 1. Scope Control
+
+Before editing files, Cursor must state:
+
+- Target objective
+- Files likely to change
+- Layer affected:
+  - KB / fast path
+  - LINE handler
+  - RAG logic
+  - evaluation
+  - deploy
+  - docs
+- Expected tests or checks
+
+Do not mix unrelated layers in one change.
+
+Bad:
+
+- KB + RAG + deploy + docs in one patch
+
+Good:
+
+- KB fast path only
+- evaluation only
+- deploy script only
+
+---
+
+## 2. Commit Unit Rules
+
+Use small commits by purpose.
+
+Recommended order:
+
+1. KB / fast path / clarification
+2. LINE handler / API integration
+3. RAG / query cache
+4. evaluation / A-B analysis
+5. deploy / Cloud Run
+6. docs
+
+Cursor must not suggest `git add .`.
+
+Use:
+
+```bash
+git status --short
+git diff --stat
+git add -p
+```
+
+---
+
+## 3. Evaluation Rules
+
+For A/B evaluation, semantic cache must be disabled unless explicitly testing cache behavior.
+
+Default command:
+
+```bash
+python3 scripts/run_eval.py --ab-compare --disable-semantic-cache
+```
+
+After evaluation, check:
+
+```bash
+cat data/eval/ab_summary.json
+cat data/eval/ab_scored_summary.json
+cat data/eval/ab_diff_report.jsonl
+cat data/eval/route_mismatch_report.jsonl
+```
+
+`ab_summary.json` の **`route_metrics.router_kpis`** を主に見る（`schema_version` 2）: `A_non_rag_rate`（A×kb_only）、`B_rag_rate`（B×rag レッグ）、`D_escalation_rate`（D×`auto` 追加実行）、`C_clarification_rate` はオフラインでは `null`（LINE E2E）。全体 `route_match` は **`route_metrics.legacy_route_match`** にあり補助指標。
+
+The evaluation report must mention:
+
+- fallback rate
+- latency p50 / p95
+- cost per 1000 requests
+- match_tier distribution
+- diff count between KB_only and RAG
+
+---
+
+## 4. Cache Rules
+
+Evaluation cache namespaces must stay separated.
+
+Required namespaces:
+
+```text
+eval:kb_only
+eval:rag
+eval:auto_router
+```
+
+Semantic cache must not leak answers across modes.
+
+If adding or modifying cache behavior, Cursor must explain:
+
+- exact cache behavior
+- semantic cache behavior
+- namespace behavior
+- evaluation impact
+
+---
+
+## 5. KB / Fast Path Rules
+
+Fast path changes must preserve these invariants:
+
+- Ambiguous short queries should clarify.
+- Specific short queries can hit.
+- Same ambiguous query repeated should not silently become hit.
+- Number replies such as `1` / `2` are resolved only within clarification state.
+- Normal standalone `1` / `2` must not be interpreted.
+
+Required tests for clarification-related changes:
+
+```bash
+python3 -m pytest tests/test_kb_fast_path.py tests/test_clarification_numeric_reply.py
+```
+
+When editing `data/faq_kb.csv`, always consider whether reindex is needed:
+
+```bash
+python3 scripts/reindex_vector_db.py
+```
+
+---
+
+## 6. RAG / Decision Path Rules
+
+RAG changes must preserve observability.
+
+Answers should expose or log:
+
+- system
+- decision_path
+- retrieval_used
+- fallback_used
+- latency_ms
+
+If changing decision routing, verify:
+
+- KB_only behavior
+- RAG behavior
+- fallback behavior
+- should_escalate behavior
+
+---
+
+## 7. LINE / Cloud Run Rules
+
+Do not mix LINE deployment changes with RAG logic changes unless explicitly requested.
+
+For LINE webhook changes, verify:
+
+- `/health`
+- `/ready`
+- `Processing LINE message`
+- `LINE Reply API success`
+- `kb_fast_path_hit`
+- `kb_fast_path_clarification`
+- `kb_fast_path_miss`
+
+Deployment should keep secrets and env vars explicit.
+
+Do not assume a new Cloud Run service has inherited secrets.
+
+---
+
+## 8. Logging Rules
+
+Any new branch or decision path must be observable.
+
+Important fields:
+
+- event
+- line_user_id
+- normalized_query
+- intent
+- decision_path
+- fallback_used
+- raw_text
+- resolved_text
+
+If logs are not structured JSON, provide Logs Explorer queries using `textPayload`.
+
+---
+
+## 9. Data / Artifact Rules
+
+Do not commit generated or heavy files unless explicitly intended.
+
+Usually avoid:
+
+```text
+data/vector_store/
+eval/runs/
+large PDFs
+temporary logs
+```
+
+If generated files are required for deployment, explain why.
+
+---
+
+## 10. Required Response Format After Changes
+
+After implementing changes, Cursor must report:
+
+1. Changed files
+2. Purpose of each change
+3. Tests run
+4. Evaluation run, if applicable
+5. Known risks
+6. Next recommended command
+
+---
+
+## 11. Anti-patterns
+
+Cursor must avoid:
+
+- Huge mixed commits
+- `git add .`
+- A/B evaluation with semantic cache leakage
+- Fast path changes without tests
+- Deploy changes without `/health` and `/ready`
+- Logs that cannot be queried
+- Silent fallbacks to missing legacy data
+
+---
+
+## Core Rule
+
+Small change. Fixed evaluation. Observable behavior.
 
