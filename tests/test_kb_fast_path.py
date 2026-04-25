@@ -153,11 +153,56 @@ def test_vague_water_question_clarifies(cfg):
     assert r.match_detail.get("clarification_reason") == "ambiguous_topic"
 
 
+def test_vague_contract_question_clarifies(cfg):
+    docs = load_kb_csv(cfg)
+    r = try_kb_fast_path("契約について聞きたい", cfg, docs)
+    assert r.kind == "clarification"
+    assert r.intent == "契約_更新"
+    assert r.match_detail.get("clarification_reason") == "ambiguous_topic"
+
+
+def test_vague_renewal_question_clarifies(cfg):
+    docs = load_kb_csv(cfg)
+    r = try_kb_fast_path("更新の件です", cfg, docs)
+    assert r.kind == "clarification"
+    assert r.intent == "契約_更新"
+    assert r.match_detail.get("clarification_reason") == "ambiguous_topic"
+
+
 def test_water_billing_specific_still_hits(cfg):
     docs = load_kb_csv(cfg)
     r = try_kb_fast_path("水道料金の明細を確認したい", cfg, docs)
     assert r.kind == "hit"
     assert r.intent == "生活_水道請求"
+
+
+_GARBAGE_INTENTS = ("ゴミ出し_ルール", "ゴミステーション_共用部")
+# 市のゴミ収集ルール本文（清掃費の質問に返すと誤解を招く）
+_GARBAGE_CITY_RULE_MARKERS = ("国東市のゴミ出しルール", "gomikeikakuhyou", "ゴミ収集計画表")
+
+
+def test_cleaning_fee_questions_do_not_map_to_garbage_intent(cfg):
+    docs = load_kb_csv(cfg)
+    for q in (
+        "清掃費って払うの？",
+        "退去清掃費は必要ですか？",
+        "クリーニング代は誰が払いますか？",
+    ):
+        r = try_kb_fast_path(q, cfg, docs)
+        assert r.intent not in _GARBAGE_INTENTS, (q, r.intent, r.kind)
+
+
+def test_cleaning_fee_hits_not_city_garbage_rule_answer(cfg):
+    docs = load_kb_csv(cfg)
+    for q in (
+        "清掃費って払うの？",
+        "退去清掃費は必要ですか？",
+        "クリーニング代は誰が払いますか？",
+    ):
+        r = try_kb_fast_path(q, cfg, docs)
+        if r.kind == "hit" and r.text:
+            for m in _GARBAGE_CITY_RULE_MARKERS:
+                assert m not in r.text, (q, m)
 
 
 def test_fast_path_disabled(cfg):
