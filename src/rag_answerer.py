@@ -22,6 +22,12 @@ from src.utils.question_terms import (
 from src.question_typing import QuestionType
 from src.management_escalation import MANAGEMENT_ESCALATION_MESSAGE, should_escalate_to_management
 from src.kb_fast_path import load_kb_documents_for_fast_path, try_kb_fast_path
+from src.contract_rag_format import (
+    DISPLAY_FORMAT_B2,
+    build_source_reference,
+    format_b2_contract_rag_display,
+    uses_master_pdf_docs,
+)
 
 
 class AnswerItem(BaseModel):
@@ -157,6 +163,40 @@ class RAGAnswerer:
 **summaryフィールドの生成**:
 - `summary`フィールドには、itemsの補足説明を記載してください。
 - itemsの要約や、追加の説明が必要な場合に使用します。
+
+{tenant_context}
+
+回答を生成してください。根拠情報にない情報は含めないでください。
+""")
+
+        self.contract_answer_prompt = ChatPromptTemplate.from_template("""
+以下の情報を基に、契約条項の説明として回答してください。
+
+質問: {question}
+
+根拠情報:
+{evidence}
+
+**重要な回答ルール（厳守）**:
+1. **推測・創作の禁止**: 根拠情報に記載されていない情報は一切含めない。推測や一般常識に基づく情報も含めない。
+2. **断定・法的判断の禁止**: 「必ず」「絶対に」「違法です」などの断定や法的判断は避け、根拠に基づく説明に留める。
+3. **情報不足時の対応**: 根拠情報が不十分な場合は、「根拠情報が不足しているため、詳細は管理会社にお問い合わせください」と明記する。
+4. **適用順の明示**: 個別契約CSV（deal）を基本契約PDF（master）より優先し、回答に適用順と根拠を明示すること。
+5. **管理会社案内**: 解釈が分かれる可能性がある場合は、最終確認先として管理会社への相談を案内する。
+
+**itemsフィールドの生成（必須）**:
+- `items`フィールドには、構造化された回答項目を必ず含めてください。
+  - procedure/policy_enumeration: 最低3項目以上
+  - fact_lookup: 最低1項目以上
+  - その他: 最低1項目以上
+- 各itemsの`citation`フィールドには、根拠となる文書ID/ページ番号/FAQ intent/ログIDを必ず記載してください。
+  - 例: citation = "p5", "契約_原状回復", "e07dee1e3fe6fe84"
+- 各itemの`text`フィールドには、具体的な項目のテキストを記載してください。
+  - 禁止事項の列挙、手順のステップ、単一事実など
+
+**summaryフィールドの生成**:
+- `summary`フィールドには、itemsの補足説明を記載してください。
+- 断定的な結論ではなく、根拠に基づく説明文として記載してください。
 
 {tenant_context}
 
@@ -1314,8 +1354,13 @@ class RAGAnswerer:
         if insufficient_evidence:
             evidence_text += "\n\n[注意] 根拠情報が不十分です。推測せず、管理会社への問い合わせを案内してください。"
         
-        # V2スキーマを使用（すべての質問タイプで統一）
-        answer_chain = self.answer_prompt | self.llm_structured
+        # V2スキーマを使用（PDF根拠を含む場合は契約向けプロンプトを適用）
+        selected_prompt = (
+            self.contract_answer_prompt
+            if uses_master_pdf_docs(docs_for_answer)
+            else self.answer_prompt
+        )
+        answer_chain = selected_prompt | self.llm_structured
         answer = answer_chain.invoke({
             "question": question,
             "evidence": evidence_text,
@@ -1335,9 +1380,10 @@ class RAGAnswerer:
         # Enforce answer structure (items count, citations)
         answer = self._enforce_answer_structure(answer, question_type, docs_for_answer)
         
-        # Check for PII leakage
+        # Check for PII leakage (before B2 display_format; template would affect length only)
         answer_text = render_answer_text(answer)
-        if self._check_pii_leakage(answer_text):
+        pii_blocked = bool(self._check_pii_leakage(answer_text))
+        if pii_blocked:
             # Replace with safe message (preserve evidence_ids)
             answer = AnswerSchema(
                 items=[AnswerItem(text="回答を生成しましたが、個人情報が含まれる可能性があるため、詳細は管理会社にお問い合わせください。", citation="")],
@@ -1346,6 +1392,10 @@ class RAGAnswerer:
                 next_action="管理会社に直接お問い合わせください。",
                 caveats="個人情報保護のため、詳細な情報は直接お問い合わせください。"
             )
+
+        if (not pii_blocked) and uses_master_pdf_docs(docs_for_answer):
+            object.__setattr__(answer, "display_format", DISPLAY_FORMAT_B2)
+            object.__setattr__(answer, "source_reference", build_source_reference(docs_for_answer))
         
         if rel_detail is not None:
             object.__setattr__(answer, "rag_relevance_guard", rel_detail)
@@ -1392,6 +1442,9 @@ def render_answer_text(answer: AnswerSchema) -> str:
     Returns:
         Formatted text string (compatible with V1 conclusion format)
     """
+    if getattr(answer, "display_format", None) == DISPLAY_FORMAT_B2:
+        return format_b2_contract_rag_display(answer)
+
     # summary優先。空の場合はitemsを簡易整形してフォールバック
     if answer.summary:
         conclusion = answer.summary.strip()
