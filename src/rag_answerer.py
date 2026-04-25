@@ -16,10 +16,12 @@ from src.responder import Responder, ResponseSchema
 from src.utils.question_terms import (
     count_distinct_pipe_tokens_in_question,
     count_pipe_field_hits,
+    extract_question_terms,
     has_content_keyword_hit,
 )
 from src.question_typing import QuestionType
 from src.management_escalation import MANAGEMENT_ESCALATION_MESSAGE, should_escalate_to_management
+from src.kb_fast_path import load_kb_documents_for_fast_path, try_kb_fast_path
 
 
 class AnswerItem(BaseModel):
@@ -750,27 +752,68 @@ class RAGAnswerer:
         
         return False
 
-    def _has_low_relevance_signal(self, question: str, docs: List[Document]) -> bool:
-        """Detect weak grounding for non-FAQ RAG answers and fail closed."""
+    def _relevance_guard_detail(self, question: str, docs: List[Document]) -> Dict[str, Any]:
+        """Explain non-FAQ relevance check; boolean matches _has_low_relevance_signal (observability)."""
+        sw = self.config.question_term_stopwords or None
+        sy = self.config.question_term_synonyms or None
+        qterms = extract_question_terms(question, stopwords=sw, synonyms=sy)
+        detail: Dict[str, Any] = {
+            "low_relevance_signal": True,
+            "inspected_non_faq_docs": 0,
+            "question_terms": qterms,
+            "source_ids": [],
+            "per_doc_hits": [],
+            "missing_terms": [],
+        }
         if not docs:
-            return True
-        # RAG relevance guard targets non-FAQ paths; FAQ guard is handled in responder.
+            detail["low_relevance_signal"] = True
+            detail["skip_reason"] = "no_docs"
+            detail["missing_terms"] = list(qterms)
+            return detail
+
         non_faq_docs = [d for d in docs if d.metadata.get("type") != "kb_faq"]
         if not non_faq_docs:
-            return False
+            detail["low_relevance_signal"] = False
+            detail["skip_reason"] = "only_kb_faq"
+            return detail
+
         checked = non_faq_docs[:2]
+        detail["inspected_non_faq_docs"] = len(checked)
+        matched_union: set = set()
+        low = True
         for doc in checked:
+            sid = str(
+                doc.metadata.get("intent")
+                or doc.metadata.get("filename")
+                or doc.metadata.get("stable_id")
+                or ""
+            )
+            detail["source_ids"].append(sid)
             haystack = "\n".join(
                 s for s in (doc.page_content or "", str(doc.metadata.get("answer") or "")) if s
             )
-            if has_content_keyword_hit(
+            term_hits = [t for t in qterms if t and t in haystack]
+            for t in term_hits:
+                matched_union.add(t)
+            hit = has_content_keyword_hit(
                 question,
                 haystack,
-                stopwords=self.config.question_term_stopwords or None,
-                synonyms=self.config.question_term_synonyms or None,
-            ):
-                return False
-        return True
+                stopwords=sw,
+                synonyms=sy,
+            )
+            detail["per_doc_hits"].append(
+                {"source_id": sid, "matched_terms": term_hits, "has_content_keyword_hit": hit}
+            )
+            if hit:
+                low = False
+        detail["low_relevance_signal"] = low
+        if low:
+            detail["missing_terms"] = [t for t in qterms if t not in matched_union]
+        return detail
+
+    def _has_low_relevance_signal(self, question: str, docs: List[Document]) -> bool:
+        """Detect weak grounding for non-FAQ RAG answers and fail closed."""
+        return self._relevance_guard_detail(question, docs)["low_relevance_signal"]
     
     def _select_docs_for_answer(self, reranked: List[Document]) -> List[Document]:
         """Select documents to use for answer generation.
@@ -896,6 +939,33 @@ class RAGAnswerer:
             )
             self._persist_to_cache(cache_key, answer, persist_cache)
             return answer
+
+        # Clarification-first guard for ambiguous topic queries (keep behavior consistent across kb_only/rag).
+        try:
+            kb_docs = load_kb_documents_for_fast_path(self.config)
+            fp = try_kb_fast_path(question, self.config, kb_docs)
+            if fp.kind == "clarification" and fp.text:
+                clar_text = fp.text.strip()
+                answer = AnswerSchema(
+                    items=[AnswerItem(text=clar_text, citation=fp.intent or "")],
+                    summary=clar_text,
+                    evidence=[fp.intent] if fp.intent else [],
+                    next_action="該当する番号か内容をもう少し具体的に教えてください。",
+                    caveats="曖昧な質問のため確認質問を返しています。",
+                )
+                object.__setattr__(answer, "clarification_reason", (fp.match_detail or {}).get("reason"))
+                object.__setattr__(answer, "clarification_intent", fp.intent)
+                self._attach_decision_meta(
+                    answer,
+                    system=decision["system"],
+                    decision_path="clarification",
+                    latency_ms=(time.perf_counter() - t0) * 1000.0,
+                    retrieval_used=False,
+                )
+                self._persist_to_cache(cache_key, answer, persist_cache)
+                return answer
+        except Exception as e:
+            print(f"[WARN] clarification guard skipped due to error: {e}")
 
         # Two-stage hierarchical search (deal CSV first, master PDF only if needed)
         kb_master_retry_used = False
@@ -1213,7 +1283,10 @@ class RAGAnswerer:
             if tenant_info:
                 tenant_context = f"\n入居者情報: {tenant_info['name']}様 ({tenant_info['room_number']}号室)"
 
-        if effective_retrieval_used and self._has_low_relevance_signal(question, docs_for_answer):
+        rel_detail: Optional[Dict[str, Any]] = None
+        if effective_retrieval_used:
+            rel_detail = self._relevance_guard_detail(question, docs_for_answer)
+        if effective_retrieval_used and rel_detail and rel_detail.get("low_relevance_signal"):
             msg = "該当する情報を確認できませんでした。管理会社へお問い合わせください。"
             answer = AnswerSchema(
                 items=[AnswerItem(text=msg, citation=evidence_ids[0] if evidence_ids else "")],
@@ -1224,6 +1297,8 @@ class RAGAnswerer:
             )
             object.__setattr__(answer, "retrieved_doc_meta", retrieved_doc_meta)
             object.__setattr__(answer, "rag_irrelevant_context", True)
+            if rel_detail is not None:
+                object.__setattr__(answer, "rag_relevance_guard", rel_detail)
             self._persist_to_cache(cache_key, answer, persist_cache)
             self._attach_decision_meta(
                 answer,
@@ -1271,6 +1346,9 @@ class RAGAnswerer:
                 next_action="管理会社に直接お問い合わせください。",
                 caveats="個人情報保護のため、詳細な情報は直接お問い合わせください。"
             )
+        
+        if rel_detail is not None:
+            object.__setattr__(answer, "rag_relevance_guard", rel_detail)
         
         # primary_source_intent for eval (legacy / LLM path)
         try:

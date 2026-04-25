@@ -93,6 +93,42 @@ def estimate_cost_usd(decision_path: str) -> float:
     return 0.0001
 
 
+NOTE_FORCED_LEG_SCOPING_JA = (
+    "A/B 比較（--ab-compare）の JSONL では、D 群の各行は "
+    "kb_only / rag の強制レッグのみ。Router KPI の D_escalation_rate は同じ設問の "
+    "別実行（forced_system=auto, cache_namespace=eval:auto_router）で計測する。 "
+    "D 行の should_escalate 期待や route 不一致を「本番 auto と同一定義の失敗」とみなさないこと。"
+)
+
+FORCED_LEG_SCOPING_META_JA = (
+    "D 群: JSONL=強制 leg（kb_only/rag）。D エスカレーション率は auto 追試行を参照。"
+)
+
+
+def build_eval_scoping(
+    ab_group: Optional[str],
+    mode: str,
+    *,
+    ab_compare: bool,
+) -> Dict[str, Any]:
+    """Per-JSONL-row hint so analysts do not conflate D forced legs with auto Router KPIs."""
+    g = (ab_group or "").strip()
+    m = (mode or "").strip()
+    d_forced = bool(ab_compare and g == "D" and m in ("kb_only", "rag"))
+    d_kpi_from_this_row = bool((not ab_compare) and g == "D" and m == "auto")
+    role = "standard"
+    if d_forced:
+        role = "d_forced_kb_or_rag_leg"
+    elif d_kpi_from_this_row:
+        role = "d_auto_router_kpi_row"
+    return {
+        "ab_compare": ab_compare,
+        "row_role": role,
+        "d_forced_leg": d_forced,
+        "d_escalation_kpi_from_separate_auto_run": bool(ab_compare and g == "D"),
+    }
+
+
 def _escalation_from_answer(answer: AnswerSchema) -> bool:
     """True if answer carries non-bot_only escalation metadata."""
     ed = getattr(answer, "escalation_data", None)
@@ -118,6 +154,9 @@ def infer_actual_route(
 
     ``clarification`` is not produced by this offline harness (use LINE tests).
     """
+    dp = str(getattr(answer, "decision_path", "") or "")
+    if dp == "clarification":
+        return "clarification"
     if eval_mode == "rag":
         return "rag"
     if eval_mode == "kb_only":
@@ -130,7 +169,6 @@ def infer_actual_route(
         return "escalation"
     if bool(getattr(answer, "fallback_used", False)):
         return "fallback"
-    dp = str(getattr(answer, "decision_path", "") or "")
     if dp == "fallback":
         return "fallback"
     answer_text = render_answer_text(answer).strip()
@@ -360,6 +398,7 @@ def build_route_metrics(
     *,
     max_examples: int = 25,
     d_auto_samples: Optional[List[Dict[str, Any]]] = None,
+    ab_compare: bool = False,
 ) -> Dict[str, Any]:
     """Build route_metrics for ab_summary.json (schema_version 2)."""
     legacy = _legacy_route_match_block(all_records, max_examples=max_examples)
@@ -372,6 +411,18 @@ def build_route_metrics(
         ),
         "router_kpis": kpis,
         "legacy_route_match": legacy,
+        "forced_leg_scoping": {
+            "ab_compare": ab_compare,
+            "note_ja": FORCED_LEG_SCOPING_META_JA,
+            "detail_ja": NOTE_FORCED_LEG_SCOPING_JA,
+            "d_group": {
+                "jsonl_modes_are_forced_kb_or_rag_only": ab_compare,
+                "d_escalation_kpi_source": (
+                    "extra_auto_runs" if ab_compare else "main_run_when_mode_auto"
+                ),
+                "extra_auto_run_count": len(d_auto_samples or []),
+            },
+        },
     }
 
 
@@ -545,11 +596,15 @@ def main() -> None:
                         "rag_retrieval_attempted": bool(
                             getattr(answer, "retrieval_used", False) or len(sources) > 0
                         ),
+                        "rag_relevance_guard": getattr(
+                            answer, "rag_relevance_guard", None
+                        ),
                     },
                     "fix_required": fix_required,
                     "failure_tags": [],
                     "pass_fail": "needs_review",
                     "reviewer_note": "",
+                    "eval_scoping": build_eval_scoping(ab_group, mode, ab_compare=args.ab_compare),
                 }
                 rec["failure_tags"] = infer_failure_tags(rec)
                 if rec["failure_tags"]:
@@ -714,8 +769,11 @@ def main() -> None:
             k = str(tag)
             failure_tag_counts[k] = failure_tag_counts.get(k, 0) + 1
     summary["failure_tag_counts"] = failure_tag_counts
+    summary["note_forced_leg_scoping"] = NOTE_FORCED_LEG_SCOPING_JA
 
-    summary["route_metrics"] = build_route_metrics(all_records, d_auto_samples=d_auto_samples)
+    summary["route_metrics"] = build_route_metrics(
+        all_records, d_auto_samples=d_auto_samples, ab_compare=args.ab_compare
+    )
     rm = summary["route_metrics"]
     mismatch_report_path = PROJECT_ROOT / "data" / "eval" / "route_mismatch_report.jsonl"
     mismatch_report_path.parent.mkdir(parents=True, exist_ok=True)
