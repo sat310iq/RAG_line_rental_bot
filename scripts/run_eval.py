@@ -86,8 +86,10 @@ def estimate_cost_usd(decision_path: str) -> float:
     """Rough relative cost model for A/B comparison."""
     if decision_path == "rag":
         return 0.002
-    if decision_path == "rule":
+    if decision_path in ("rule", "escalation"):
         return 0.0003
+    if decision_path == "fallback":
+        return 0.00015
     return 0.0001
 
 
@@ -126,7 +128,15 @@ def infer_actual_route(
         return "rule"
     if _escalation_from_answer(answer):
         return "escalation"
+    if bool(getattr(answer, "fallback_used", False)):
+        return "fallback"
     dp = str(getattr(answer, "decision_path", "") or "")
+    if dp == "fallback":
+        return "fallback"
+    answer_text = render_answer_text(answer).strip()
+    fm = (getattr(config, "fallback_message", "") or "").strip()
+    if fm and fm in answer_text:
+        return "fallback"
     if dp == "direct":
         return "fast_path"
     if dp == "rag":
@@ -472,6 +482,7 @@ def main() -> None:
                 exp_rt = expected_route or ""
                 route_strict = bool(exp_rt) and actual_route == exp_rt
                 route_relaxed = bool(exp_rt) and route_match_relaxed(exp_rt, actual_route)
+                kb_retry = bool(getattr(answer, "kb_master_retry_used", False))
                 rec = {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "run_id": run_id,
@@ -501,6 +512,11 @@ def main() -> None:
                         "mode": mode,
                         "evidence_count": len(answer.evidence or []),
                         "source_count": len(sources),
+                        "fallback_used": fb,
+                        "kb_master_retry_used": kb_retry,
+                        "rag_retrieval_attempted": bool(
+                            getattr(answer, "retrieval_used", False) or len(sources) > 0
+                        ),
                     },
                     "fix_required": fix_required,
                     "failure_tags": [],

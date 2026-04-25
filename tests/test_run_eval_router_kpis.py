@@ -84,3 +84,18 @@ def test_build_route_metrics_schema_v2_legacy_present(re):
     leg = out["legacy_route_match"]
     assert "route_match_rate_strict" in leg
     assert "by_ab_group" in leg
+
+
+def test_infer_actual_route_fallback_used_is_fallback(re):
+    from src.rag_answerer import AnswerItem, AnswerSchema
+
+    ans = AnswerSchema(
+        items=[AnswerItem(text="x", citation="")],
+        summary="x",
+        evidence=[],
+        next_action="",
+        caveats="",
+    )
+    object.__setattr__(ans, "fallback_used", True)
+    cfg = type("Cfg", (), {"kb_fast_path_short_max_len": 10, "fallback_message": "fallback"})()
+    assert re.infer_actual_route("auto", ans, "q", cfg) == "fallback"
