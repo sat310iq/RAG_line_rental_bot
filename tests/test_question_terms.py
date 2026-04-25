@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from src.config import QUESTION_TERM_SYNONYMS_RAG_DEFAULT
 from src.utils.question_terms import (
     DEFAULT_STOPWORDS,
     extract_question_terms,
@@ -39,4 +40,26 @@ def test_synonym_links_浸水_to_content_with_水害():
         "水害保険の対象外となる場合がございます",
         stopwords=DEFAULT_STOPWORDS,
         synonyms=custom_syn,
+    ) is True
+
+
+def test_rag_default_synonym_map_has_浸水_and_抵当権():
+    assert "浸水" in QUESTION_TERM_SYNONYMS_RAG_DEFAULT
+    assert "水害" in QUESTION_TERM_SYNONYMS_RAG_DEFAULT["浸水"]
+    assert "抵当権" in QUESTION_TERM_SYNONYMS_RAG_DEFAULT
+    assert "競売" in QUESTION_TERM_SYNONYMS_RAG_DEFAULT["抵当権"]
+
+
+def test_has_content_uses_rag_default_synonyms():
+    assert has_content_keyword_hit(
+        "浸水は危険ですか",
+        "水害区域の図面は添付のとおりです。",
+        stopwords=DEFAULT_STOPWORDS,
+        synonyms=QUESTION_TERM_SYNONYMS_RAG_DEFAULT,
+    ) is True
+    assert has_content_keyword_hit(
+        "抵当権について教えて",
+        "仮差押と競売の手続について",
+        stopwords=DEFAULT_STOPWORDS,
+        synonyms=QUESTION_TERM_SYNONYMS_RAG_DEFAULT,
     ) is True

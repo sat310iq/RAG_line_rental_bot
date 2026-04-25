@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.documents import Document
 
+from src.config import QUESTION_TERM_SYNONYMS_RAG_DEFAULT
 from src.rag_answerer import RAGAnswerer
 
 
@@ -15,6 +17,16 @@ def ra_guard():
     c = MagicMock()
     c.question_term_stopwords = None
     c.question_term_synonyms = None
+    r = RAGAnswerer.__new__(RAGAnswerer)
+    r.config = c
+    return r
+
+
+@pytest.fixture
+def ra_guard_with_default_synonyms():
+    c = MagicMock()
+    c.question_term_stopwords = None
+    c.question_term_synonyms = copy.deepcopy(QUESTION_TERM_SYNONYMS_RAG_DEFAULT)
     r = RAGAnswerer.__new__(RAGAnswerer)
     r.config = c
     return r
@@ -80,3 +92,25 @@ def test_relevance_mixed_faq_plus_master_checks_master_leg(ra_guard):
     d2 = ra_guard._relevance_guard_detail("抵当権実行", [faq, master])
     assert d2.get("inspected_non_faq_docs") == 1
     assert d2["low_relevance_signal"] is True
+
+
+def test_relevance_config_synonym_抵当_and_競売_in_content(ra_guard_with_default_synonyms):
+    """Config 既定同義で、質問に 抵当権 ・根拠に 競売 だけでも関連扱い。"""
+    d = Document(
+        page_content="仮差押えや競売の流れに関する一般的な記載。",
+        metadata={"type": "master", "filename": "legal.pdf"},
+    )
+    ra = ra_guard_with_default_synonyms
+    d2 = ra._relevance_guard_detail("抵当権のことで教えてください", [d])
+    assert d2["low_relevance_signal"] is False
+
+
+def test_relevance_config_synonym_浸水_and_水害_in_content(ra_guard_with_default_synonyms):
+    """浸水 -> 水害/洪水: 根拠に 水害 のみでヒット（「浸水」を別トークンにする）。"""
+    d = Document(
+        page_content="洪水・水害リスクの地域区分について。",
+        metadata={"type": "master", "filename": "hazard.txt"},
+    )
+    ra = ra_guard_with_default_synonyms
+    d2 = ra._relevance_guard_detail("浸水は心配です", [d])
+    assert d2["low_relevance_signal"] is False

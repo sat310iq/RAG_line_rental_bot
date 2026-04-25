@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -13,6 +14,13 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
+
+# 質問用語同義: RAG relevance guard / has_content_keyword_hit の既定。環境で JSON 上書き可。
+# 極小セット（浸水系・抵当権系）のみ; 拡大は eval の rag_relevance_guard を見てから足す。
+QUESTION_TERM_SYNONYMS_RAG_DEFAULT: Dict[str, List[str]] = {
+    "浸水": ["水害", "洪水"],
+    "抵当権": ["差押", "差押さえ", "競売"],
+}
 
 
 class Config(BaseSettings):
@@ -116,7 +124,10 @@ class Config(BaseSettings):
         description="Fallback message",
     )
     question_term_stopwords: List[str] = Field(default_factory=list)
-    question_term_synonyms: Dict[str, List[str]] = Field(default_factory=dict)
+    question_term_synonyms: Dict[str, List[str]] = Field(
+        default_factory=lambda: copy.deepcopy(QUESTION_TERM_SYNONYMS_RAG_DEFAULT),
+        description="Head term -> synonyms for question-term extraction and relevance matching (env JSON override).",
+    )
 
     force_reindex_rental_qa: bool = Field(default=False)
     enable_query_cache: bool = Field(default=True)
