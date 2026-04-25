@@ -875,6 +875,12 @@ class RAGAnswerer:
         # If FAQ documents exist, use only those; otherwise use all reranked documents
         return faq_docs if faq_docs else reranked
 
+    def _select_generation_prompt(self, docs_for_answer: List[Document]) -> ChatPromptTemplate:
+        """Select prompt template for structured answer generation."""
+        if uses_master_pdf_docs(docs_for_answer):
+            return self.contract_answer_prompt
+        return self.answer_prompt
+
     def _persist_to_cache(self, question: str, answer: AnswerSchema, persist_cache: bool) -> None:
         """Store answer in query cache unless caller defers (e.g. LINE replies first)."""
         if not persist_cache:
@@ -1355,11 +1361,7 @@ class RAGAnswerer:
             evidence_text += "\n\n[注意] 根拠情報が不十分です。推測せず、管理会社への問い合わせを案内してください。"
         
         # V2スキーマを使用（PDF根拠を含む場合は契約向けプロンプトを適用）
-        selected_prompt = (
-            self.contract_answer_prompt
-            if uses_master_pdf_docs(docs_for_answer)
-            else self.answer_prompt
-        )
+        selected_prompt = self._select_generation_prompt(docs_for_answer)
         answer_chain = selected_prompt | self.llm_structured
         answer = answer_chain.invoke({
             "question": question,
