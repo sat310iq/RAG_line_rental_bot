@@ -1,191 +1,322 @@
-# 賃貸入居者向け 3ソース統合RAG PoC
+# Rental RAG PoC (Routing-first Design)
 
-macOS上でローカル実行できる賃貸入居者向けQAチャットボットのPoC実装です。
-PDF、KB CSV（15列スキーマ）、運用ログCSVの3ソースを統合したRAGシステムで、2025標準ガイドライン（Hybrid+RRF+Semantic Rerank、Plan/Retrieve/Fuse分離、構造化出力）に準拠しています。
+![Python](https://img.shields.io/badge/Python-3.10-blue)
+![Status](https://img.shields.io/badge/status-PoC-orange)
+![Focus](https://img.shields.io/badge/focus-RAG%20Routing-green)
 
-## ナレッジベースCSV（15列スキーマ）
+## Key Idea
 
-本システムは、**15列スキーマのナレッジベースCSV**（`data/faq_kb.csv`）を推奨データソースとして使用します。各列は回答生成を制御するパラメータとして機能し、LLMの暴走・誤回答を抑えます。
+Most RAG systems try to improve retrieval.
 
-### CSV列定義
+This project takes the opposite approach:
 
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| intent | string | FAQ項目の一意識別子（例: "設備_水漏れ"） |
-| category | string | 大分類（例: ゴミ/設備/契約/防犯/生活/規則/共用部） |
-| keywords | string | 検索用キーワード（スペース区切り） |
-| answer | string | 基本回答（RAGは原則この答えをベースに返す） |
-| response_type | enum | fact/instruction/warning/policy（返答トーン制御） |
-| confidence_level | enum | high/medium/low（断定度制御） |
-| required_inputs | string | 追加ヒアリング項目（カンマ区切り） |
-| urgency | enum | low/medium/high（SLA・冒頭文制御） |
-| conditions | string | 適用条件 |
-| effective_from | date | 有効開始日（YYYY-MM-DD、空欄可） |
-| effective_to | date | 有効終了日（YYYY-MM-DD、空欄可） |
-| escalation | enum | bot_only/management_required/owner_required/conditional_owner |
-| escalation_reason | string | エスカレーション理由 |
-| handoff_message | string | Slack/チケット用の引継ぎ文 |
-| notes | string | 運用メモ（返答には出さない） |
+-> **Reduce RAG usage as much as possible**
 
-### CSV追加方法
+### Design
 
-1. `data/faq_kb.csv` を編集
-2. 15列すべてを埋める（空欄可の列は空欄でも可）
-3. `python scripts/reindex_vector_db.py` を実行して再インデックス
+- Rule-based routing for majority of queries (FAQ)
+- Clarification for ambiguous inputs
+- RAG only for contract-level questions
+- Escalation for legal / risky queries
 
-詳細は `data/faq_kb.csv` のサンプルデータを参照してください。
+### Result
 
-## 機能
+- Lower LLM cost
+- Safer responses (avoid legal hallucination)
+- More predictable system behavior
 
-- **3ソース統合RAG**: PDF（契約/ガイドライン）、KB CSV（15列スキーマ）、運用ログCSVから情報を検索
-- **スキーマ列ベース制御**: CSVの各列を制御パラメータとして使用し、LLMの暴走・誤回答を抑制
-- **Hybrid Retrieval**: BM25（キーワード）+ Vector（意味類似）の統合検索
-- **RRF Fusion**: 複数検索結果の統合
-- **Semantic Reranking**: LLMベースの再ランキング
-- **日付有効性判定**: effective_from/toに基づく自動フィルタリング
-- **本人確認**: 簡易認証により、本人の号室＋氏名のみを回答に含める
-- **情報漏えい対策**: PII検知・マスキング、本人フィルタリング
-- **構造化出力**: 結論/根拠/次アクション/注意点の固定フォーマット
+---
 
-## セットアップ
+## What this project does
 
-### 前提条件
+This is a Proof-of-Concept chatbot for rental tenants.
 
-- Python 3.11+
-- macOS（ローカルCLI実行）
+Instead of relying on RAG for everything, it:
 
-### インストール手順
+1. Answers common questions via deterministic rules
+2. Uses RAG only when contract-level context is required
+3. Avoids answering risky questions and escalates to humans
 
-1. 仮想環境を作成・有効化:
-```bash
-cd rental_rag_poc
-python3.11 -m venv .venv
-source .venv/bin/activate
+---
+
+## Architecture (Simplified)
+
+```text
+User Query
+  ↓
+[Router]
+  ├── Rule (FAQ)
+  ├── Clarification
+  ├── RAG (contracts only)
+  └── Escalation (legal/financial)
 ```
 
-2. 依存関係をインストール:
+---
+
+## Example Routing
+
+| Query | Route |
+|------|------|
+| "水漏れしています" | Rule |
+| "契約の違約金は？" | RAG |
+| "これ違法ですか？" | Escalation |
+| "ガスの件なんですが" | Clarification |
+
+---
+
+## Quick Start
+
 ```bash
+pip install -r requirements.txt
+cp env.example .env
+python3 scripts/run_eval.py --dataset eval/datasets/line_rag_eval_router_abcd_v1.csv
+```
+
+## Public vs Deploy
+
+This repository is structured with separation of concerns:
+
+- Public: core logic, routing, evaluation
+- Private: environment variables, API keys, deployment configs
+
+⚠️ Secrets are NOT included.  
+Use `*.example` files to configure your environment.
+
+## Limitations
+
+- Requires OpenAI API key
+- RAG quality depends on document structure
+- Clarification behavior differs between offline and LINE runtime
+- Legal interpretation is intentionally limited (safe design)
+
+## Future Work
+
+- Improve retrieval accuracy (B-group queries)
+- Enhance relevance guard (fail-closed logic)
+- Expand escalation detection
+- Reduce fallback frequency
+
+## Why this matters
+
+Most RAG systems:
+
+- Overuse LLM
+- Increase cost
+- Risk hallucination
+
+This project shows:
+
+- RAG should be the exception, not the default
+# rental_rag_poc
+
+> **日本語サマリー**  
+> 賃貸入居者向けLINEチャットボットのPoCです。  
+> 「RAGをデフォルトにしない」設計を検証しました。  
+> クエリの大半はルールで処理し、RAGは契約書参照にのみ使用、法的判断はエスカレーションします。  
+> コスト削減・安全性向上・回答品質の維持を同時に狙う設計の記録です。
+
+## Key Idea
+
+Most RAG systems try to improve retrieval.
+
+This project takes the opposite approach:
+
+-> Reduce RAG usage as much as possible
+
+Design:
+
+- Rule-based routing for majority of queries
+- RAG only for contract-level questions
+- Escalation for risky/legal queries
+
+Result:
+
+- Lower cost
+- Safer responses
+- More predictable behavior
+
+## What this project does
+
+Most RAG systems treat retrieval as the default. This project does the opposite.
+
+**Core idea: Don't use RAG unless necessary.**
+
+| Approach | Typical RAG | This PoC |
+|---|---|---|
+| Default path | RAG for everything | Rule-based routing |
+| Optimization target | Recall / answer quality | Routing accuracy |
+| LLM usage | High | Minimal |
+| Legal/financial queries | LLM answers | Escalated to humans |
+
+**Result:**
+- Reduced unnecessary LLM calls
+- Improved safety on legal and financial queries
+- Maintained acceptable answer quality
+
+## Why this matters
+
+When building a chatbot for rental tenants, most questions fall into predictable categories:
+
+- **FAQ / operational** — "How much is the water bill?" -> rule-based answer, no LLM needed
+- **Contract reference** — "Where does it say that in the contract?" -> RAG appropriate
+- **Legal / judgment** — "Can I sue?" / "Is this illegal?" -> must not be answered by AI
+
+Treating all three the same way leads to high cost, hallucination risk, and legal exposure.
+
+The key insight: **routing design matters more than model quality.**
+
+## Architecture
+
+```text
+User query
+    |
+    v
+1) Fast Path       - keyword match -> immediate response (sub-second)
+    |
+    v
+2) Rule Engine     - deterministic logic for fees, rules, prohibitions
+    |
+    v
+3) Clarification   - resolve ambiguous short inputs (e.g. "gas", "certificate")
+    |
+    v
+4) Escalation      - legal / financial judgment -> hand off to property manager
+    |
+    v
+5) RAG             - contract-level questions only (fallback, not default)
+```
+
+RAG is layer 5, not layer 1.
+
+## Example routing (A / B / C / D categories)
+
+| Category | Example query | Route |
+|---|---|---|
+| A - Non-RAG | "Is smoking allowed?" | Rule Engine -> direct answer |
+| A - Non-RAG | "Is internet free?" | Fast Path -> direct answer |
+| B - RAG | "Where does the contract mention this?" | RAG -> source citation |
+| B - RAG | "What does the important matters document say?" | RAG -> source citation |
+| C - Clarification | "About gas" | Clarification -> ask follow-up |
+| D - Escalation | "Can I claim rent reduction?" | Escalation -> refer to manager |
+| D - Escalation | "Is this legally valid?" | Escalation -> refer to manager |
+
+**Evaluation metrics (on synthetic test dataset):**
+
+| Metric | Description | Result |
+|---|---|---|
+| `A_non_rag_rate` | Simple queries correctly NOT sent to RAG | 1.0 |
+| `B_rag_rate` | Contract queries correctly sent to RAG | 1.0 |
+| `D_escalation_rate` | Legal queries correctly escalated | 1.0 |
+
+> Note: Results are on a small synthetic dataset, not production traffic. The value is in the routing framework, not the numbers.
+
+## Tech stack
+
+| Component | Technology |
+|---|---|
+| API server | Python / FastAPI / Uvicorn |
+| Messaging | LINE Webhook |
+| Deployment | Cloud Run |
+| Vector store | Chroma |
+| Retrieval | BM25 + vector hybrid search |
+| LLM | OpenAI API |
+| Knowledge base | CSV-based FAQ |
+| Documents | Contract PDF / TXT |
+
+## Public profile vs Deploy profile
+
+This repository intentionally contains two profiles in one codebase:
+
+- **Public profile (GitHub showcase)**: routing-first PoC concept, minimal runnable evaluation, and architecture explanation.
+- **Deploy profile (GCP operations)**: Cloud Run deployment structure and operational docs for production-like setup.
+
+What is public:
+- project structure (`deploy/`, `docs/deploy/`) to explain how deployment is designed
+- template files for environment configuration
+
+What is never committed:
+- real secrets (`.env`, `deploy/.env.gcp`)
+- local artifacts (`data/vector_store/`, `eval/runs/`, `logs/`)
+
+Template-only secret workflow:
+
+```bash
+cp env.example .env
+cp env.gcp.example .env.gcp
+cp deploy/.env.gcp.example deploy/.env.gcp
+```
+
+Then set your own values locally. Do not commit those generated `.env*` files.
+
+## Quick start
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/YOUR_USERNAME/rental_rag_poc.git
+cd rental_rag_poc
 pip install -r requirements.txt
 ```
 
-3. 環境変数を設定:
-```bash
-cp .env.example .env
-# .env を編集して OPENAI_API_KEY を設定
-```
-
-4. データファイルを配置:
-- `data/documents/` にPDFファイルを配置
-- `data/faq_kb.csv` を作成（15列スキーマのナレッジベースCSV）※推奨
-- `data/dispute_guideline_faq.csv` を作成（FAQ CSV、後方互換性のため）
-- `data/faq_data.csv` を作成（運用ログCSV）
-- `data/tenants.csv` を作成（入居者マスタ: contract_id,room_number,name,pin,phone,email）
-
-## 使用方法
-
-### 初回セットアップ（データインデックス作成）
+### 2. Set up environment
 
 ```bash
-python scripts/reindex_vector_db.py
+cp env.example .env
+# Edit .env and add your OPENAI_API_KEY
 ```
 
-### CLIチャット起動
+### 3. Run evaluation
 
 ```bash
-python -m src.rental_qa_chat
+python3 scripts/run_eval.py --dataset eval/datasets/line_rag_eval_router_abcd_v1.csv
 ```
 
-起動時に契約IDとPINの入力が求められます。認証成功後、質問を入力して回答を得られます。
+This runs the router against the synthetic test dataset and prints routing accuracy per category.
 
-### 評価実行
+## Repository structure
 
-```bash
-# 評価データセットで実行（5件のテストモード）
-python scripts/run_simple_eval.py
-
-# 結果分析
-python scripts/analyze_eval_results.py
-```
-
-評価結果は以下の場所に保存されます：
-- `data/eval/eval_results.jsonl`: 個別の評価結果（JSON Lines形式）
-- `data/eval/eval_metrics.json`: 集計メトリクス
-- `data/eval/eval_analysis.json`: 詳細分析結果（`analyze_eval_results.py`実行後）
-
-評価メトリクスはComet ML (OPIK)にも記録されます。`ENABLE_COMET_LOGGING=true`を設定している場合、`RAG_POC`プロジェクトのExperimentsタブで確認できます。
-
-#### 評価メトリクスの見方
-
-評価スクリプトは以下のメトリクスを計算します：
-
-- **Recall@5 / Recall@10**: 期待されるドキュメントが検索結果の上位5件/10件に含まれる割合（0-1、高いほど良い）
-- **MRR (Mean Reciprocal Rank)**: 期待されるドキュメントが最初に出現する順位の逆数の平均（0-1、高いほど良い）
-- **Relevance**: 回答が質問に関連しているか（0-1、高いほど良い）
-- **Hallucination**: 回答に根拠情報に基づかない情報が含まれる割合（0-1、低いほど良い）
-- **PII Leakage Rate**: 個人情報が漏洩した質問の割合（0-1、低いほど良い）
-- **Prohibited Mention Rate**: 禁止事項が言及された質問の割合（0-1、低いほど良い）
-
-**目標値**:
-- Recall@5: 0.50以上（現在: 0.25）
-- Hallucination: 0.50以下（現在: 0.53）
-- PII Leakage Rate: 0.00（現在: 0.00）✅
-- Prohibited Mention Rate: 0.10以下（現在: 0.10）✅
-
-評価結果の詳細は`data/eval/eval_analysis.json`を確認してください。検索失敗やハルシネーションのパターンが分析されています。
-
-### スモークテスト
-
-```bash
-python scripts/smoke_test.py
-```
-
-## プロジェクト構造
-
-```
+```text
 rental_rag_poc/
-├── src/
-│   ├── config.py              # 設定管理
-│   ├── tenant_auth.py          # 本人確認
-│   ├── document_loader.py      # PDFローダ
-│   ├── csv_qa_loader.py        # CSVローダ（FAQ/運用ログ、後方互換）
-│   ├── kb_loader.py            # KB CSVローダ（15列スキーマ）※新規
-│   ├── responder.py            # レスポンス生成（スキーマ列ベース制御）※新規
-│   ├── vector_store_manager.py # ベクトルストア管理（有効性判定含む）
-│   ├── query_cache.py          # クエリキャッシュ
-│   ├── rag_answerer.py         # RAG回答生成（Responder統合）
-│   ├── eval_id_mapper.py       # 評価用IDマッピング
-│   ├── evaluate.py             # 評価ロジック
-│   ├── metrics.py              # 評価メトリクス計算
-│   ├── opik_integration.py     # OPIK/Comet ML統合
-│   └── rental_qa_chat.py       # CLIインターフェース
-├── scripts/
-│   ├── reindex_vector_db.py    # 再インデックス（KB CSV対応）
-│   ├── smoke_test.py           # スモークテスト
-│   ├── run_simple_eval.py      # 評価実行（シンプル版）
-│   └── analyze_eval_results.py # 評価結果分析
-├── tests/
-│   ├── test_csv_loader.py
-│   ├── test_masking.py
-│   ├── test_retrieval_smoke.py
-│   ├── test_answer_policy.py
-│   └── test_eval_baseline.py
-└── data/
-    ├── documents/              # PDFファイル
-    ├── faq_kb.csv             # ナレッジベースCSV（15列スキーマ）※新規
-    ├── eval/                   # 評価データセット
-    └── vector_store/           # ChromaDB永続化データ
+|- src/                    # Public core: routing and RAG logic
+|  |- router/              # Routing logic (Fast Path, Rule Engine, Escalation, RAG)
+|  |- rag/                 # RAG pipeline (hybrid search, rerank, generation)
+|  `- line/                # LINE webhook handler
+|- scripts/                # Public core: local run/eval scripts
+|  `- run_eval.py          # Evaluation entry point
+|- tests/                  # Public core: unit tests
+|- eval/                   # Public core: synthetic/anonymized evaluation dataset
+|  `- datasets/
+|     `- line_rag_eval_router_abcd_v1.csv  # Synthetic test data (no real tenant data)
+|- deploy/                 # Deploy profile: Cloud Run deployment scripts/templates
+|- docs/deploy/            # Deploy profile: operational deployment documents
+|- env.example             # Template only (local copy -> .env)
+|- env.gcp.example         # Template only (local copy -> .env.gcp)
+`- requirements.txt
 ```
 
-## 開発・テスト
+## Limitations
 
-```bash
-# ユニットテスト実行
-pytest tests/
+- This is a PoC and not production-ready.
+- The evaluation dataset is limited and may not reflect real-world diversity.
+- The chatbot is not connected to a live LINE environment.
+- Contract documents used are anonymized or synthetic.
+- Escalation rules are heuristic-based and may require further tuning.
 
-# 特定のテスト実行
-pytest tests/test_masking.py -v
-```
+All evaluation datasets are synthetic or anonymized and do not contain real tenant data.
 
-## ライセンス
+## Future work
 
-PoC実装のため、ライセンスは未定です。
+- [ ] Confidence-based routing (probabilistic fallback between layers)
+- [ ] Clarification layer improvement (multi-turn disambiguation)
+- [ ] Escalation boundary tuning with real query logs
+- [ ] Human-in-the-loop feedback loop for router training
+- [ ] Evaluation on real (anonymized) production queries
+
+## Background
+
+This repo accompanies a LinkedIn article series on routing-first RAG design:
+
+- Part 1: [RAGを"使いすぎない"設計へ](https://www.linkedin.com/in/YOUR_PROFILE)
+- Part 2: AIはどこで止まるべきか? - Escalation設計 *(coming soon)*
+- Posting templates: [docs/LINKEDIN_POST_TEMPLATES.md](docs/LINKEDIN_POST_TEMPLATES.md)
+- Public release scope: [docs/PUBLIC_RELEASE_SCOPE.md](docs/PUBLIC_RELEASE_SCOPE.md)

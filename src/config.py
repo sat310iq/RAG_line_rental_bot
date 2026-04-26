@@ -328,9 +328,12 @@ def get_env_bootstrap_meta() -> Dict[str, Any]:
 
 
 def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
-    """Load env files: shared LangGraph `code/.env` (or RENTAL_RAG_SHARED_ENV_FILE), then project `.env` for gaps.
+    """Load env files in a reproducible order.
 
-    Order ensures OPENAI_* / COMET_* from LangGraph win; LINE / paths only in rental_rag_poc/.env still apply.
+    Default: load only this repo's `.env`.
+    Optional shared load:
+    - Explicit: set RENTAL_RAG_SHARED_ENV_FILE=<path>
+    - Implicit sibling (legacy): set RENTAL_RAG_ALLOW_IMPLICIT_SHARED_ENV=true
     """
     global _implicit_shared_warned, _last_env_bootstrap
 
@@ -340,6 +343,7 @@ def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
         "mode": "bootstrap",
         "project_root": str(root.resolve()),
         "rental_rag_shared_env_file_var": None,
+        "allow_implicit_shared_env": False,
         "loaded_override_path": None,
         "langgraph_candidate": str(langgraph_resolved),
         "rental_env_path": str((root / ".env").resolve()),
@@ -347,6 +351,14 @@ def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
         "fallback_load_dotenv_cwd": False,
     }
     shared_override = os.environ.get("RENTAL_RAG_SHARED_ENV_FILE", "").strip()
+    allow_implicit_shared = os.environ.get("RENTAL_RAG_ALLOW_IMPLICIT_SHARED_ENV", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    meta["allow_implicit_shared_env"] = allow_implicit_shared
+
     if shared_override:
         meta["rental_rag_shared_env_file_var"] = shared_override
         sp = Path(shared_override).expanduser()
@@ -357,12 +369,12 @@ def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
             )
         load_dotenv(sp, override=True)
         meta["loaded_override_path"] = str(sp.resolve())
-    else:
+    elif allow_implicit_shared:
         if langgraph_resolved.is_file():
             if "RENTAL_RAG_SHARED_ENV_FILE" not in os.environ and not _implicit_shared_warned:
                 logger.warning(
-                    "RENTAL_RAG_SHARED_ENV_FILE not set; loading sibling shared .env at %s "
-                    "(export RENTAL_RAG_SHARED_ENV_FILE to pin an explicit path).",
+                    "RENTAL_RAG_ALLOW_IMPLICIT_SHARED_ENV=true; loading sibling shared .env at %s "
+                    "(set RENTAL_RAG_SHARED_ENV_FILE to pin an explicit path).",
                     langgraph_resolved,
                 )
                 _implicit_shared_warned = True

@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -44,7 +45,12 @@ Thumbs.db
 
 # Environment variables
 .env
+.env.gcp
 .env.local
+deploy/.env.gcp
+
+# GCP PoC local state (stop/resume metadata; do not commit)
+.state/
 
 # Data and cache
 data/vector_store/
@@ -53,10 +59,23 @@ data/vector_store/
 
 # Logs
 *.log
-logs/
+logs/*
+!logs/.gitkeep
+
+# Eval runs (large JSONL; keep directory tracked via README)
+eval/runs/*.jsonl
+eval/runs/*
+!eval/runs/README.md
+
+# Eval artifacts (local analysis output)
+data/eval/*.json
 
 # Beads - Note: .beads/ should be tracked by Git (contains task data)
 # Do NOT ignore .beads/
+.beads/daemon.log
+
+# Local-only helper script overrides (optional)
+scripts/*.local.sh
 
 # Cursor
 .cursor/debug.log
