@@ -37,6 +37,7 @@ from src.contract_rag_format import (
     format_b2_contract_rag_display,
     uses_master_pdf_docs,
 )
+from src.legal_term_resolver import LegalTermResolver
 
 
 class AnswerItem(BaseModel):
@@ -273,16 +274,26 @@ class RAGAnswerer:
 - **賃貸人負担**については、根拠に列挙された例・文言のみを述べる。一般論として「経年劣化」「通常損耗」「自然損耗」等を**常に補ってはならない**。これらの語は、根拠にその記載がある場合、または根拠がその旨の一般表現のみの場合に限り、根拠の表現に沿って要約する。
 - 根拠にない一般論・推測・管理会社への誘導は、上記の禁止事項および項目1に従う。
 
+9. **平易な説明（登記・抵当権・重要事項の硬い文言）**: 抵当権の実行・競売・競落人・猶予期間・対抗・明け渡しなど、語が難しいときは **意味を変えずに**、まず **summary の冒頭で入居者向けに短い日常語で要点**を書く（例: 何が起きたとき／誰がどうなるか／敷金はどう扱われるか）。続けて items で根拠どおりの事実・条項を列挙する。**法令の詳細解釈・判例・一般常識での補足は禁止**。根拠と矛盾する言い換えはしない。
+
 **items・summary**:
 - items は根拠に即した事実・条項の要約を列挙。citation にページやファイル名等を記載。
-- summary は items の補足に留める。
+- summary は、上記のとおり **平易な一文で要点を足したうえで** items を補足してよい。
 
 {tenant_context}
 
 回答を生成してください。
 """
         )
-    
+
+        try:
+            self._legal_term_resolver = LegalTermResolver.from_default()
+        except Exception as e:
+            import sys
+
+            print(f"[WARN] LegalTermResolver init failed: {e}", file=sys.stderr)
+            self._legal_term_resolver = None
+
     def _route_query(self, question: str) -> Literal["deal_only", "master_only", "multi"]:
         """Route query to appropriate source(s).
         
@@ -1866,7 +1877,18 @@ class RAGAnswerer:
                 )
             else:
                 evidence_text += "\n\n[注意] 根拠情報が不十分です。推測せず、管理会社への問い合わせを案内してください。"
-        
+
+        # 契約ソース×マスター根拠時: 根拠テキストに含まれる法律用語の平易説明を evidence に注入
+        _resolver = getattr(self, "_legal_term_resolver", None)
+        if (
+            _resolver
+            and contract_source_q
+            and uses_master_pdf_docs(docs_for_answer)
+        ):
+            _term_injection = _resolver.build_prompt_injection(evidence_text)
+            if _term_injection:
+                evidence_text = evidence_text + "\n\n" + _term_injection
+
         # V2スキーマを使用（PDF根拠を含む場合は契約向けプロンプトを適用）
         selected_prompt = self._select_generation_prompt(
             docs_for_answer, contract_source_q=contract_source_q
