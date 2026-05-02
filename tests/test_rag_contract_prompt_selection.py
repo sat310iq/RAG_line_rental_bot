@@ -252,3 +252,5 @@ def test_contract_source_qa_prompt_has_appendix_burden_format_rules() -> None:
     assert "無理に" in prompt
     assert "【別表・負担区分の出力形式】" in prompt
     assert "【根拠制約】" in prompt
+    assert "平易" in prompt
+    assert "抵当権" in prompt
