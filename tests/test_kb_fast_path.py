@@ -210,3 +210,21 @@ def test_fast_path_disabled(cfg):
     cfg.kb_fast_path_enabled = False
     r = try_kb_fast_path("ガス料金を知りたい", cfg, docs)
     assert r.kind == "miss"
+
+
+def test_kb_fast_path_short_term_penalty_hit(cfg):
+    """REQ: 短期解約違約金 - fast path で hit し answer に金額が含まれること"""
+    docs = load_kb_csv(cfg)
+    for question in [
+        "短期解約の違約金はいくらですか？",
+        "違約金いくら？",
+    ]:
+        r = try_kb_fast_path(question, cfg, docs)
+        assert r.kind == "hit", f"expected hit, got {r.kind} for '{question}'"
+        assert r.intent == "契約_短期解約違約金", (
+            f"intent mismatch for '{question}': {r.intent}"
+        )
+        assert any(
+            amount in (r.text or "")
+            for amount in ["114,600", "76,400", "38,200"]
+        ), f"金額が answer に含まれない: {r.text}"

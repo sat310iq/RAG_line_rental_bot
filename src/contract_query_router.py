@@ -135,6 +135,11 @@ def is_contract_source_question(
     if _RE_USAGE_PURPOSE.search(q) and detect_usage_purpose_intent(q):
         return True
 
+    if "短期解約違約金" in q:
+        return True
+    if "違約金" in q and any(m in q for m in ("いくら", "幾ら", "金額", "何ヶ月", "何カ月")):
+        return True
+
     if extra_regex:
         for pat in extra_regex:
             if pat and re.search(pat, q):

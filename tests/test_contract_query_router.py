@@ -61,3 +61,13 @@ def test_prefers_contract_when_honbun_article() -> None:
 
 def test_prefers_not_contract_when_only_hazard() -> None:
     assert not prefers_contract_master_chunks("ハザードマップではどうなっていますか")
+
+
+def test_is_contract_source_question_short_term_penalty() -> None:
+    """REQ: 短期解約違約金・違約金+金額の質問はcontract source経路に入ること"""
+    assert is_contract_source_question("短期解約違約金はいくらですか？") is True
+    assert is_contract_source_question("違約金はいくらですか？") is True
+    assert is_contract_source_question("違約金の金額を教えて") is True
+    assert is_contract_source_question("違約金は何ヶ月分ですか？") is True
+    # 違約金という語があっても金額系でなければFalseのまま
+    assert is_contract_source_question("違約金について教えて") is False

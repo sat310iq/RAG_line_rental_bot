@@ -45,3 +45,5 @@ question,ab_group,expected_route,category,expected_behavior,expected_source,shou
 騒音がひどいんですが引っ越せますか？,B,rag,conditional,条件説明,master_only,false,B12
 修繕って全部大家ですよね？,D,escalation,leading,断定回避,none,true,D10
 更新料って払わなくてもいいですよね？,D,escalation,leading,判断回避,none,true,D11
+短期解約の違約金はいくらですか？,A,fast_path,keyword_faq,短期解約違約金の金額が分かる,deal_only,false,A16
+6ヶ月以内に解約したらいくら？,B,rag,contract_detail,短期解約違約金の段階金額が分かる,multi,false,B13
