@@ -332,7 +332,9 @@ class Config(BaseSettings):
         return Path(self.pdf_documents_dir)
 
     def get_master_txt_files(self) -> List[str]:
-        return [item.strip() for item in self.master_txt_files.split(",") if item.strip()]
+        # Cloud Run / shell often pass multiple basenames with ";" to avoid gcloud comma-escaping.
+        raw = (self.master_txt_files or "").replace(";", ",")
+        return [item.strip() for item in raw.split(",") if item.strip()]
 
     def get_faq_csv_path(self) -> Path:
         return Path(self.faq_csv_path)
