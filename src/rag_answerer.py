@@ -1,8 +1,9 @@
 """RAG answerer with Router Chain, Planner, Semantic Reranking, and structured output."""
 
 import re
+import unicodedata
 import time
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 from pydantic import BaseModel, Field
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate
@@ -21,10 +22,18 @@ from src.utils.question_terms import (
 )
 from src.question_typing import QuestionType
 from src.management_escalation import MANAGEMENT_ESCALATION_MESSAGE, should_escalate_to_management
+from src.individual_contract_guard import (
+    INDIVIDUAL_CONTRACT_HANDOFF_MESSAGE,
+    should_handoff_individual_contract_terms,
+)
 from src.kb_fast_path import load_kb_documents_for_fast_path, try_kb_fast_path
+from src.contract_query_router import extract_contract_article_index, is_contract_source_question
+from src.contract_query_intent import detect_article_reference, detect_usage_purpose_intent
+from src.retrieval_metadata_boost import apply_master_document_boost
 from src.contract_rag_format import (
     DISPLAY_FORMAT_B2,
     build_source_reference,
+    build_source_reference_line,
     format_b2_contract_rag_display,
     uses_master_pdf_docs,
 )
@@ -135,8 +144,26 @@ class RAGAnswerer:
 
 評価結果:
 """)
-        
-        self.answer_prompt = ChatPromptTemplate.from_template("""
+        _tpl_scope = bool(getattr(self.config, "rag_template_clause_scope_enabled", True))
+        _ans_apply = (
+            "3. **適用順・スコープ**: KBの運用案内とマスター契約が併存する場合は根拠に示された情報を優先する。"
+            "なお本チャットでは入居者個別の賃料・契約期間・敷金等の確定は行わず、定型条項・手続の説明に留める。\n"
+        ) if _tpl_scope else (
+            "3. **適用順の明示**: 個別契約CSV（deal）を基本契約PDF（master）より優先し、回答に適用順と根拠を明示すること。\n"
+        )
+        _cap_apply = (
+            "4. **適用順・スコープ**: KBの運用案内とマスター契約が併存する場合は根拠に示された情報を優先する。"
+            "なお本チャットでは入居者個別の条件の確定は行わず、契約条項の一般的な説明に留める。\n"
+        ) if _tpl_scope else (
+            "4. **適用順の明示**: 個別契約CSV（deal）を基本契約PDF（master）より優先し、回答に適用順と根拠を明示すること。\n"
+        )
+        _csq_scope_line = (
+            "\n**スコープ**: 回答はマスター文書に記載の定型条項・条文の趣旨に限定する。"
+            "入居者個別の賃料・期間等の確定は行わない（根拠に該当記載がない場合は確認できない旨に留める）。\n"
+        ) if _tpl_scope else ""
+
+        self.answer_prompt = ChatPromptTemplate.from_template(
+            """
 以下の情報を基に、質問に回答してください。
 
 質問: {question}
@@ -147,8 +174,9 @@ class RAGAnswerer:
 **重要な回答ルール（厳守）**:
 1. **推測・創作の禁止**: 根拠情報に記載されていない情報は一切含めない。推測や一般常識に基づく情報も含めない。
 2. **情報不足時の対応**: 根拠情報が不十分で質問に完全に答えられない場合は、「根拠情報が不足しているため、詳細は管理会社にお問い合わせください」と明記する。
-3. **適用順の明示**: 個別契約CSV（deal）を基本契約PDF（master）より優先し、回答に適用順と根拠を明示すること。
-4. **ルールの正確性**: 特に「禁止」「許可」「申請が必要」などの明確なルールがある場合は、それを正確に伝えること。根拠情報にないルールは記載しない。
+"""
+            + _ans_apply
+            + """4. **ルールの正確性**: 特に「禁止」「許可」「申請が必要」などの明確なルールがある場合は、それを正確に伝えること。根拠情報にないルールは記載しない。
 
 **itemsフィールドの生成（必須）**:
 - `items`フィールドには、構造化された回答項目を必ず含めてください。
@@ -167,9 +195,11 @@ class RAGAnswerer:
 {tenant_context}
 
 回答を生成してください。根拠情報にない情報は含めないでください。
-""")
+"""
+        )
 
-        self.contract_answer_prompt = ChatPromptTemplate.from_template("""
+        self.contract_answer_prompt = ChatPromptTemplate.from_template(
+            """
 以下の情報を基に、契約条項の説明として回答してください。
 
 質問: {question}
@@ -181,8 +211,9 @@ class RAGAnswerer:
 1. **推測・創作の禁止**: 根拠情報に記載されていない情報は一切含めない。推測や一般常識に基づく情報も含めない。
 2. **断定・法的判断の禁止**: 「必ず」「絶対に」「違法です」などの断定や法的判断は避け、根拠に基づく説明に留める。
 3. **情報不足時の対応**: 根拠情報が不十分な場合は、「根拠情報が不足しているため、詳細は管理会社にお問い合わせください」と明記する。
-4. **適用順の明示**: 個別契約CSV（deal）を基本契約PDF（master）より優先し、回答に適用順と根拠を明示すること。
-5. **管理会社案内**: 解釈が分かれる可能性がある場合は、最終確認先として管理会社への相談を案内する。
+"""
+            + _cap_apply
+            + """5. **管理会社案内**: 解釈が分かれる可能性がある場合は、最終確認先として管理会社への相談を案内する。
 
 **itemsフィールドの生成（必須）**:
 - `items`フィールドには、構造化された回答項目を必ず含めてください。
@@ -201,7 +232,56 @@ class RAGAnswerer:
 {tenant_context}
 
 回答を生成してください。根拠情報にない情報は含めないでください。
-""")
+"""
+        )
+
+        self.contract_source_qa_prompt = ChatPromptTemplate.from_template(
+            """
+以下の根拠情報（賃貸借契約書・重要事項説明書等のマスター文書からの抜粋）のみに基づき、質問に答えてください。質問はマスター文書の該当箇所に何と書いてあるかを問うものです。"""
+            + _csq_scope_line
+            + """
+
+質問: {question}
+
+根拠情報:
+{evidence}
+
+**契約書QAモード（厳守）**:
+1. **根拠外の禁止**: 根拠情報にない内容は書かない。FAQ・一般案内・推測・一般常識で補わない。
+2. **定型文の禁止（出力に含めない）**: 次の語句・表現を回答本文（items・summary）に含めないこと。
+   - 「管理会社へお問い合わせください」「管理会社にお問い合わせください」
+   - 「公式サイト」「TEL」「電話」での案内に誘導する文
+   - 「次のアクション」「次アクション」
+   - 「この件は管理会社での対応が必要」に相当する表現
+3. **根拠不足時**: 根拠情報から該当箇所を特定できない場合は、断定せず
+   「契約書（根拠情報）内では確認できません」と伝える。法的判断はしない。
+4. **断定の抑制**: 「必ず」「絶対に」「違法です」等の断定は避ける。
+5. **原状回復・費用・責任**: 条文・別表に書かれた一般的な趣旨・参照先のみ説明する。
+   個別の負担額・請求可否・過失の有無は断定しない。
+6. **ハザード・浸水**: 重要事項の記載の要約に留める。個別物件のリスクや浸水深の確定はしない。
+7. **目的物・特約事項**: 賃貸借の目的物（所在・建物・専有部分の範囲等）や特約事項については、根拠情報に現れる**該当箇所を見つけた範囲で網羅的に**示す。複数の特約・別表・頭書がある場合は漏れなく列挙し、条文・別表の文言を必要な範囲で簡潔に転記してよい（根拠にない確定はしない）。
+8. **別表・負担区分**（質問が別表・表・負担区分に関するとき、次の【出力形式】と【根拠制約】を併せて適用する）:
+
+【別表・負担区分の出力形式】
+- 根拠情報に**複数の負担主体**（賃借人・賃貸人、甲・乙など）の記載が**併記**されている場合のみ、冒頭で質問の対象となる別表・部位を1文で示す。
+- その後、根拠の用語に合わせて「■ 賃借人負担」「■ 賃貸人負担」等の見出しに分け、材料・部位ごとに箇条書きで整理する。
+- 補修・張替え・経過年数・単位（枚・㎡など）など、根拠に区分がある場合はその区分を保持する。
+- **負担主体が根拠上二分されていない**場合は、無理に見出しを作らず、根拠情報の構造に沿って短く答える。
+
+【根拠制約】
+- 見出し・箇条書きに含める内容は、根拠チャンクに書かれた範囲に限定する。
+- **賃貸人負担**については、根拠に列挙された例・文言のみを述べる。一般論として「経年劣化」「通常損耗」「自然損耗」等を**常に補ってはならない**。これらの語は、根拠にその記載がある場合、または根拠がその旨の一般表現のみの場合に限り、根拠の表現に沿って要約する。
+- 根拠にない一般論・推測・管理会社への誘導は、上記の禁止事項および項目1に従う。
+
+**items・summary**:
+- items は根拠に即した事実・条項の要約を列挙。citation にページやファイル名等を記載。
+- summary は items の補足に留める。
+
+{tenant_context}
+
+回答を生成してください。
+"""
+        )
     
     def _route_query(self, question: str) -> Literal["deal_only", "master_only", "multi"]:
         """Route query to appropriate source(s).
@@ -456,8 +536,13 @@ class RAGAnswerer:
         deal_top_k: int = 12,
         master_top_k: int = 8,
         pdf_threshold: Optional[float] = None,
+        force_master: bool = False,
     ) -> Dict[str, List[Document]]:
-        """Two-stage search: deal CSV first, master PDF only if needed."""
+        """Two-stage search: deal CSV first, master PDF only if needed.
+
+        If force_master is True, always run master search and skip CSV-based topic filtering on PDFs
+        (contract-source questions must not be short-circuited by FAQ CSV completeness).
+        """
         deal_results = self.vector_store_manager.search(question, sources=["deal"])
         csv_scored = deal_results.get("deal", [])
         thresholds = self.config.get_source_score_thresholds()
@@ -477,7 +562,7 @@ class RAGAnswerer:
         for idx, doc in enumerate(csv_docs):
             doc.metadata["_search_rank"] = idx
 
-        if self._csv_answer_complete(csv_docs):
+        if self._csv_answer_complete(csv_docs) and not force_master:
             return {"deal": csv_docs, "master": []}
 
         if not csv_docs:
@@ -490,12 +575,188 @@ class RAGAnswerer:
         pdf_docs = self._filter_scored_results(
             pdf_scored, pdf_thr, "PDF", question=question
         )
-        if topic and topic != "unknown":
+        if topic and topic != "unknown" and not force_master:
             filtered_pdf_docs = [doc for doc in pdf_docs if doc.metadata.get('topic') == topic]
             if filtered_pdf_docs:
                 pdf_docs = filtered_pdf_docs
         pdf_docs = self._semantic_rerank(question, pdf_docs, min(master_top_k, len(pdf_docs)))
         return {"deal": csv_docs, "master": pdf_docs}
+
+    def _contract_source_master_retry(
+        self, question: str, *, include_trace: bool = False
+    ) -> Any:
+        """Extra master-only search with relaxed threshold and short sub-queries (contract-source)."""
+        qn = unicodedata.normalize("NFKC", question or "")
+        pdf_thr = float(getattr(self.config, "contract_source_pdf_retry_threshold", 0.45) or 0.45)
+        retry_top_k = int(getattr(self.config, "contract_source_retry_top_k", 12) or 12)
+        seen_ids: Set[Any] = set()
+        merged: List[Document] = []
+        trace: Dict[str, Any] = {
+            "threshold": pdf_thr,
+            "retry_top_k": retry_top_k,
+            "queries": [],
+            "per_query": [],
+            "merged_count": 0,
+        }
+        filter_enabled = bool(
+            getattr(self.config, "contract_source_retry_filter_enabled", True)
+        )
+        retry_min_keep = int(getattr(self.config, "contract_source_retry_min_keep", 8) or 8)
+        trace["filter_enabled"] = filter_enabled
+        trace["filter_min_keep"] = retry_min_keep
+
+        def _add_docs(docs: List[Document]) -> None:
+            for d in docs:
+                did = d.metadata.get("stable_id") or hash(d.page_content)
+                if did in seen_ids:
+                    continue
+                seen_ids.add(did)
+                merged.append(d)
+
+        queries: List[str] = [question]
+        if m := re.search(r"第\s*(\d+)\s*条", qn):
+            queries.append(f"第{m.group(1)}条")
+        usage_purpose_q = detect_usage_purpose_intent(qn)
+        if usage_purpose_q and detect_article_reference(qn) is None:
+            queries.append("第3条")
+            queries.append("居住のみを目的として")
+        elif "使用目的" in qn:
+            queries.append("居住のみを目的として")
+            queries.append("居住")
+        elif "居住" in qn:
+            queries.append("使用目的")
+        if m := re.search(r"特約\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫0-9０-９]+)", qn):
+            queries.append(f"特約{m.group(1)}")
+        queries = queries[:3]
+        trace["queries"] = list(queries)
+
+        def _is_article3_doc(doc: Document) -> bool:
+            md = doc.metadata or {}
+            if md.get("article_seq") == 3:
+                return True
+            for key in ("article_number", "cite_label", "section_label"):
+                val = str(md.get(key) or "")
+                if "第3条" in val:
+                    return True
+            return False
+
+        def _is_article_match(doc: Document, article_idx: Optional[int]) -> bool:
+            if article_idx is None:
+                return False
+            md = doc.metadata or {}
+            seq = md.get("article_seq")
+            if isinstance(seq, int) and seq == article_idx:
+                return True
+            label = str(md.get("article_number") or "")
+            return f"第{article_idx}条" in label
+
+        def _is_heading_match(doc: Document, heading_terms: List[str]) -> bool:
+            if not heading_terms:
+                return False
+            md = doc.metadata or {}
+            haystack = "\n".join(
+                [
+                    str(md.get("article_number") or ""),
+                    str(md.get("section_label") or ""),
+                    str(md.get("cite_label") or ""),
+                    str(doc.page_content or ""),
+                ]
+            )
+            return any(term in haystack for term in heading_terms)
+
+        def _is_keyword_match(doc: Document, terms: List[str]) -> bool:
+            if not terms:
+                return False
+            md = doc.metadata or {}
+            haystack = "\n".join(
+                [
+                    str(md.get("article_number") or ""),
+                    str(md.get("section_label") or ""),
+                    str(md.get("cite_label") or ""),
+                    str(doc.page_content or ""),
+                ]
+            )
+            return any(term and term in haystack for term in terms)
+
+        for q in queries:
+            master_results = self.vector_store_manager.search(q, sources=["master"])
+            pdf_scored = master_results.get("master", [])
+            pdf_docs = self._filter_scored_results(
+                pdf_scored, pdf_thr, "PDF", question=q
+            )
+            per_query = {
+                "query": q,
+                "raw_hits": len(pdf_scored),
+                "threshold_hits": len(pdf_docs),
+                "reranked_hits": 0,
+            }
+            if pdf_docs:
+                pdf_docs = self._semantic_rerank(
+                    q, pdf_docs, min(retry_top_k, len(pdf_docs))
+                )
+                per_query["reranked_hits"] = len(pdf_docs)
+                _add_docs(pdf_docs)
+            trace["per_query"].append(per_query)
+        if merged:
+            if filter_enabled:
+                article_idx = detect_article_reference(qn)
+                heading_terms = [
+                    t
+                    for t in ("使用目的", "居住目的", "用途", "原状回復", "禁止事項", "賃料", "敷金", "更新", "特約")
+                    if t in qn
+                ]
+                sw = self.config.question_term_stopwords or None
+                sy = self.config.question_term_synonyms or None
+                question_terms = extract_question_terms(question, stopwords=sw, synonyms=sy)
+
+                article_docs = [d for d in merged if _is_article_match(d, article_idx)]
+                heading_docs = [
+                    d for d in merged if d not in article_docs and _is_heading_match(d, heading_terms)
+                ]
+                keyword_docs = [
+                    d
+                    for d in merged
+                    if d not in article_docs and d not in heading_docs and _is_keyword_match(d, question_terms)
+                ]
+                remaining_docs = [
+                    d for d in merged if d not in article_docs and d not in heading_docs and d not in keyword_docs
+                ]
+
+                filtered_merged: List[Document] = article_docs + heading_docs
+                filtered_merged.extend(keyword_docs)
+                if len(filtered_merged) < retry_min_keep:
+                    filtered_merged.extend(remaining_docs[: (retry_min_keep - len(filtered_merged))])
+
+                trace["filter_counts"] = {
+                    "before": len(merged),
+                    "article_match": len(article_docs),
+                    "heading_match": len(heading_docs),
+                    "keyword_match": len(keyword_docs),
+                    "after": len(filtered_merged),
+                }
+                merged = filtered_merged
+
+            if usage_purpose_q and detect_article_reference(qn) is None:
+                article3_docs = [d for d in merged if _is_article3_doc(d)]
+                other_docs = [d for d in merged if not _is_article3_doc(d)]
+                merged = article3_docs + other_docs
+                trace["article3_prioritized"] = bool(article3_docs)
+            print(f"[INFO] contract_source master retry: merged {len(merged)} PDF chunk(s).")
+        trace["merged_count"] = len(merged)
+        if include_trace:
+            return merged, trace
+        return merged
+
+    def _contract_source_not_found_answer(self, question: str) -> AnswerSchema:
+        """No contract (master) evidence: short answer, no FAQ evidence IDs."""
+        msg = "契約書（根拠情報）内では確認できません。"
+        return AnswerSchema(
+            items=[AnswerItem(text=msg, citation="contract_source_not_found")],
+            summary=msg,
+            evidence=[],
+            next_action="",
+            caveats="",
+        )
 
     def _precedence_and_recency_key(self, doc: Document) -> tuple:
         """Sort by precedence (desc), recency (desc), then search order (asc)."""
@@ -570,8 +831,9 @@ class RAGAnswerer:
                 source_info.append(f"論点: {doc.metadata['topic']}")
             if 'citations' in doc.metadata and doc.metadata['citations']:
                 source_info.append(f"根拠: {doc.metadata['citations']}")
-            if 'article_number' in doc.metadata and doc.metadata['article_number']:
-                source_info.append(f"条文: {doc.metadata['article_number']}")
+            ref_line = build_source_reference_line(dict(doc.metadata))
+            if ref_line:
+                source_info.append(f"参照元: {ref_line}")
             
             source_str = " | ".join(source_info) if source_info else "不明"
             
@@ -875,8 +1137,27 @@ class RAGAnswerer:
         # If FAQ documents exist, use only those; otherwise use all reranked documents
         return faq_docs if faq_docs else reranked
 
-    def _select_generation_prompt(self, docs_for_answer: List[Document]) -> ChatPromptTemplate:
+    def _select_docs_for_contract_source(
+        self, reranked: List[Document], *, contract_source_q: bool
+    ) -> List[Document]:
+        """When asking for contract wording, drop kb_faq from evidence (always or when PDF exists)."""
+        if not contract_source_q:
+            return reranked
+        non_faq = [d for d in reranked if d.metadata.get("type") != "kb_faq"]
+        drop_always = bool(getattr(self.config, "rag_contract_source_drop_kb_faq_entirely", True))
+        if drop_always:
+            return non_faq
+        pdf_docs = [d for d in reranked if d.metadata.get("type") == "pdf"]
+        if not pdf_docs:
+            return reranked
+        return non_faq if non_faq else reranked
+
+    def _select_generation_prompt(
+        self, docs_for_answer: List[Document], *, contract_source_q: bool = False
+    ) -> ChatPromptTemplate:
         """Select prompt template for structured answer generation."""
+        if contract_source_q and uses_master_pdf_docs(docs_for_answer):
+            return self.contract_source_qa_prompt
         if uses_master_pdf_docs(docs_for_answer):
             return self.contract_answer_prompt
         return self.answer_prompt
@@ -887,7 +1168,13 @@ class RAGAnswerer:
             return
         include_embedding = True
         decision_path = getattr(answer, "decision_path", None)
-        if decision_path in ("direct", "rule", "escalation"):
+        if decision_path in (
+            "direct",
+            "rule",
+            "escalation",
+            "contract_source_not_found",
+            "individual_contract_handoff",
+        ):
             include_embedding = False
         self.query_cache.set(question, answer, include_embedding=include_embedding)
 
@@ -947,6 +1234,7 @@ class RAGAnswerer:
         # Check cache first
         t0 = time.perf_counter()
         decision = self._decide_answer_path(question, forced_system=forced_system)
+        contract_source_q = is_contract_source_question(question)
         cache_key = f"{cache_namespace}::{question}" if cache_namespace else question
         cached_result = self.query_cache.get(cache_key, allow_semantic=allow_semantic_cache)
         if cached_result:
@@ -957,6 +1245,7 @@ class RAGAnswerer:
                 latency_ms=(time.perf_counter() - t0) * 1000.0,
                 retrieval_used=getattr(cached_result, "retrieval_used", False),
             )
+            object.__setattr__(cached_result, "contract_source_q", contract_source_q)
             return cached_result
 
         if forced_system == "auto" and should_escalate_to_management(question):
@@ -984,13 +1273,65 @@ class RAGAnswerer:
                 retrieval_used=False,
             )
             self._persist_to_cache(cache_key, answer, persist_cache)
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
+            return answer
+
+        if (
+            forced_system == "auto"
+            and getattr(self.config, "enable_individual_contract_handoff", True)
+            and should_handoff_individual_contract_terms(question)
+        ):
+            msg = INDIVIDUAL_CONTRACT_HANDOFF_MESSAGE
+            answer = AnswerSchema(
+                items=[AnswerItem(text=msg, citation="individual_contract_handoff")],
+                summary=msg,
+                evidence=[],
+                next_action="所定の窓口（管理・入居手続）へ、ご契約に紐づく内容として個別にお問い合わせください。",
+                caveats="",
+            )
+            object.__setattr__(
+                answer,
+                "escalation_data",
+                {
+                    "escalation_type": "individual_contract_terms",
+                    "reason": "no_individual_deal_answer",
+                },
+            )
+            self._attach_decision_meta(
+                answer,
+                system="KB_only",
+                decision_path="individual_contract_handoff",
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                retrieval_used=False,
+            )
+            self._persist_to_cache(cache_key, answer, persist_cache)
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
             return answer
 
         # Clarification-first guard for ambiguous topic queries (keep behavior consistent across kb_only/rag).
         try:
             kb_docs = load_kb_documents_for_fast_path(self.config)
             fp = try_kb_fast_path(question, self.config, kb_docs)
-            if fp.kind == "clarification" and fp.text:
+            if fp.kind == "hit" and fp.text and not contract_source_q:
+                hit_text = fp.text.strip()
+                answer = AnswerSchema(
+                    items=[AnswerItem(text=hit_text, citation=fp.intent or "")],
+                    summary=hit_text,
+                    evidence=[fp.intent] if fp.intent else [],
+                    next_action="",
+                    caveats="",
+                )
+                self._attach_decision_meta(
+                    answer,
+                    system=decision["system"],
+                    decision_path="direct",
+                    latency_ms=(time.perf_counter() - t0) * 1000.0,
+                    retrieval_used=False,
+                )
+                self._persist_to_cache(cache_key, answer, persist_cache)
+                object.__setattr__(answer, "contract_source_q", contract_source_q)
+                return answer
+            if fp.kind == "clarification" and fp.text and not contract_source_q:
                 clar_text = fp.text.strip()
                 answer = AnswerSchema(
                     items=[AnswerItem(text=clar_text, citation=fp.intent or "")],
@@ -1009,6 +1350,7 @@ class RAGAnswerer:
                     retrieval_used=False,
                 )
                 self._persist_to_cache(cache_key, answer, persist_cache)
+                object.__setattr__(answer, "contract_source_q", contract_source_q)
                 return answer
         except Exception as e:
             print(f"[WARN] clarification guard skipped due to error: {e}")
@@ -1016,18 +1358,50 @@ class RAGAnswerer:
         # Two-stage hierarchical search (deal CSV first, master PDF only if needed)
         kb_master_retry_used = False
         decided_kb_path = decision["decision_path"] in ("direct", "rule")
-        if decided_kb_path:
+        article_idx = extract_contract_article_index(question) if contract_source_q else None
+        contract_source_retry_debug: Dict[str, Any] = {
+            "attempted": False,
+            "article_index": article_idx,
+            "before_count": 0,
+            "after_count": 0,
+            "added_docs": 0,
+            "retry_added": 0,
+            "retry_trace": {},
+        }
+
+        if decided_kb_path and contract_source_q:
+            hierarchical_results = self._hierarchical_search(
+                question,
+                tenant_contract_id,
+                deal_top_k=self.config.rag_rerank_top_n,
+                master_top_k=max(
+                    int(getattr(self.config, "contract_source_master_top_k", 10) or 10),
+                    int(self.config.rag_rerank_top_n),
+                ),
+                force_master=True,
+            )
+        elif decided_kb_path:
             hierarchical_results = self._hierarchical_search(
                 question,
                 tenant_contract_id,
                 deal_top_k=self.config.rag_rerank_top_n,
                 master_top_k=0,
+                force_master=False,
             )
             hierarchical_results["master"] = []
         else:
-            hierarchical_results = self._hierarchical_search(question, tenant_contract_id)
+            _kwargs: Dict[str, Any] = {"force_master": contract_source_q}
+            if contract_source_q:
+                _kwargs["master_top_k"] = max(
+                    int(getattr(self.config, "contract_source_master_top_k", 10) or 10),
+                    int(self.config.rag_rerank_top_n),
+                )
+            hierarchical_results = self._hierarchical_search(
+                question, tenant_contract_id, **_kwargs
+            )
         csv_docs = hierarchical_results.get("deal", [])
         pdf_docs = hierarchical_results.get("master", [])
+        contract_source_retry_debug["before_count"] = len(pdf_docs)
 
         if (
             not csv_docs
@@ -1046,11 +1420,54 @@ class RAGAnswerer:
                 deal_top_k=self.config.rag_rerank_top_n,
                 master_top_k=max(1, int(self.config.rag_rerank_top_n)),
                 pdf_threshold=retry_pdf_thr,
+                force_master=contract_source_q,
             )
             csv_docs = hierarchical_results.get("deal", [])
             pdf_docs = hierarchical_results.get("master", [])
+            contract_source_retry_debug["before_count"] = len(pdf_docs)
+
+        if contract_source_q and getattr(self, "vector_store_manager", None) is not None:
+            should_retry = article_idx is not None or not pdf_docs
+            if should_retry:
+                contract_source_retry_debug["attempted"] = True
+                retry_extra, retry_trace = self._contract_source_master_retry(
+                    question, include_trace=True
+                )
+                contract_source_retry_debug["retry_trace"] = retry_trace
+                if retry_extra:
+                    seen_ids: Set[Any] = {
+                        (d.metadata or {}).get("stable_id") or hash(d.page_content)
+                        for d in pdf_docs
+                    }
+                    merged_pdf = list(pdf_docs)
+                    added_docs = 0
+                    for d in retry_extra:
+                        did = (d.metadata or {}).get("stable_id") or hash(d.page_content)
+                        if did not in seen_ids:
+                            seen_ids.add(did)
+                            merged_pdf.append(d)
+                            added_docs += 1
+                    pdf_docs = merged_pdf
+                    hierarchical_results["master"] = merged_pdf
+                    contract_source_retry_debug["added_docs"] = added_docs
+                    contract_source_retry_debug["retry_added"] = added_docs
+                contract_source_retry_debug["after_count"] = len(pdf_docs)
 
         if not csv_docs and not pdf_docs:
+            if contract_source_q:
+                print("[INFO] No CSV/PDF for contract-source question. Returning contract_source_not_found.")
+                answer = self._contract_source_not_found_answer(question)
+                self._attach_decision_meta(
+                    answer,
+                    system=decision["system"],
+                    decision_path="contract_source_not_found",
+                    latency_ms=(time.perf_counter() - t0) * 1000.0,
+                    retrieval_used=False,
+                )
+                self._persist_to_cache(cache_key, answer, persist_cache)
+                object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+                object.__setattr__(answer, "contract_source_q", contract_source_q)
+                return answer
             print("[INFO] No CSV/PDF match above threshold. Returning fallback message.")
             fallback_message = self.config.fallback_message
             answer = AnswerSchema(
@@ -1070,6 +1487,7 @@ class RAGAnswerer:
                 retrieval_used=False,
             )
             object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
             return answer
 
         effective_decision_path = decision["decision_path"]
@@ -1096,6 +1514,10 @@ class RAGAnswerer:
             "master_count": len(pdf_docs),
             "resolved_count": len(resolved_docs),
             "total_documents": len(all_documents),
+            "contract_source_q": contract_source_q,
+            "contract_article_index": article_idx,
+            "contract_source_retry": contract_source_retry_debug,
+            "request_latency_ms": round((time.perf_counter() - t0) * 1000.0, 3),
         }
         
         # Filter tenant-specific information
@@ -1129,10 +1551,22 @@ class RAGAnswerer:
             # Re-apply keyword+precedence order after dedup/merge (dedup can scramble CSV order)
             kb_docs_in_results = self._keyword_rerank(question, kb_docs_in_results)
         other_docs = [doc for doc in unique_docs if doc.metadata.get('type') != 'kb_faq']
+        master_boost_trace: List[Dict[str, Any]] = []
+        if contract_source_q:
+            other_docs, master_boost_trace = apply_master_document_boost(
+                question,
+                other_docs,
+                contract_source_q=True,
+            )
+            search_debug_info["master_metadata_boost"] = master_boost_trace
+
+        # Reorder: contract-source questions prioritize master/pdf chunks over FAQ CSV
+        if contract_source_q:
+            reranked = (other_docs + kb_docs_in_results)[: self.config.rag_rerank_top_n]
+        else:
+            reranked = (kb_docs_in_results + other_docs)[: self.config.rag_rerank_top_n]
         
-        # Reorder: KB CSV first, then others, then apply top_n
-        reranked = (kb_docs_in_results + other_docs)[: self.config.rag_rerank_top_n]
-        
+        search_debug_info["rerank_pool_count"] = len(other_docs + kb_docs_in_results)
         search_debug_info["after_rerank"] = len(reranked)
         search_debug_info["reranked_intents"] = [
             doc.metadata.get('intent', doc.metadata.get('type', 'unknown'))
@@ -1144,7 +1578,7 @@ class RAGAnswerer:
         ]
         
         # Task 4: Fallback improvement - If KB CSV not found but router says deal_only, try searching deal collection specifically
-        if source_type == "deal_only":
+        if source_type == "deal_only" and not contract_source_q:
             # Check if KB documents are found in reranked results
             kb_docs_in_reranked = [doc for doc in reranked if doc.metadata.get('type') == 'kb_faq']
             if not kb_docs_in_reranked:
@@ -1176,8 +1610,63 @@ class RAGAnswerer:
                         reranked = faq_kb_docs[:self.config.rag_rerank_top_n] + [doc for doc in reranked if doc.metadata.get('type') != 'kb_faq']
                         reranked = reranked[:self.config.rag_rerank_top_n]
         
-        # Select documents for answer generation (resolved order)
-        docs_for_answer = reranked
+        # Select documents for answer generation (contract-source: exclude kb_faq when PDF evidence exists)
+        docs_for_answer = self._select_docs_for_contract_source(
+            reranked, contract_source_q=contract_source_q
+        )
+        uses_master_ev = uses_master_pdf_docs(docs_for_answer)
+        cand_rows: List[Dict[str, Any]] = []
+        for i, d in enumerate(reranked):
+            m = d.metadata or {}
+            in_answer = d in docs_for_answer
+            dropped = ""
+            if not in_answer:
+                if contract_source_q and m.get("type") == "kb_faq" and uses_master_ev:
+                    dropped = "kb_faq_excluded_when_master_evidence"
+                else:
+                    dropped = "not_in_docs_for_answer"
+            cand_rows.append(
+                {
+                    "rank": i + 1,
+                    "filename": m.get("filename", ""),
+                    "doc_kind": m.get("doc_kind", ""),
+                    "article_number": m.get("article_number"),
+                    "article_seq": m.get("article_seq"),
+                    "paragraph_seq": m.get("paragraph_seq"),
+                    "section_id": m.get("section_id"),
+                    "section_label": (m.get("section_label") or "")[:120],
+                    "intent": m.get("intent", ""),
+                    "used_for_answer": in_answer,
+                    "dropped_reason": dropped,
+                }
+            )
+        search_debug_info["retrieval_candidates"] = cand_rows
+        search_debug_info["used_articles"] = [
+            {
+                "article_seq": (d.metadata or {}).get("article_seq"),
+                "article_number": (d.metadata or {}).get("article_number"),
+                "filename": (d.metadata or {}).get("filename"),
+            }
+            for d in docs_for_answer
+            if (d.metadata or {}).get("type") != "kb_faq"
+        ]
+        search_debug_info["request_latency_ms"] = round((time.perf_counter() - t0) * 1000.0, 3)
+
+        if contract_source_q and not uses_master_pdf_docs(docs_for_answer):
+            print("[INFO] contract_source_q: no master PDF chunks in evidence; returning not_found (no FAQ Responder).")
+            answer = self._contract_source_not_found_answer(question)
+            self._attach_decision_meta(
+                answer,
+                system=decision["system"],
+                decision_path="contract_source_not_found",
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                retrieval_used=effective_retrieval_used,
+            )
+            object.__setattr__(answer, "search_debug_info", search_debug_info)
+            self._persist_to_cache(cache_key, answer, persist_cache)
+            object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
+            return answer
         
         # Analyze document sources for detailed logging
         selected_sources = set(doc.metadata.get('type', 'unknown') for doc in docs_for_answer)
@@ -1197,9 +1686,9 @@ class RAGAnswerer:
         # Use Responder if docs_for_answer contains only deal CSV documents
         faq_only_in_answer = all(doc.metadata.get('type') == 'kb_faq' for doc in docs_for_answer) if docs_for_answer else False
         
-        if faq_only_in_answer:
+        if faq_only_in_answer and not contract_source_q:
             # Use new Responder for KB-based responses
-            # Note: docs_for_answer is already filtered to FAQ-only by _select_docs_for_answer()
+            # Note: FAQ-only path when no PDF (or non-contract-source) evidence was selected
             try:
                 response_schema, human_text = self.responder.generate(
                     question, docs_for_answer, user_inputs=None, tenant_info=tenant_info
@@ -1272,7 +1761,7 @@ class RAGAnswerer:
                     })
                 
                 # Add application order summary to caveats
-                if docs_for_answer:
+                if docs_for_answer and not contract_source_q:
                     caveat_prefix = "適用順: 個別契約CSV > 基本契約PDF"
                     if "適用順" not in answer.caveats:
                         answer.caveats = f"{caveat_prefix}, {answer.caveats}".strip(" ,")
@@ -1287,6 +1776,7 @@ class RAGAnswerer:
                     retrieval_used=effective_retrieval_used and bool(docs_for_answer),
                 )
                 object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+                object.__setattr__(answer, "contract_source_q", contract_source_q)
                 return answer
             except Exception as e:
                 print(f"Warning: Responder failed, falling back to legacy method: {e}")
@@ -1296,6 +1786,8 @@ class RAGAnswerer:
         
         # Format evidence
         evidence_text = self._format_evidence(docs_for_answer)
+        search_debug_info["llm_evidence_char_len"] = len(evidence_text)
+        search_debug_info["llm_evidence_token_estimate"] = max(1, len(evidence_text) // 4)
         
         # Check if evidence is insufficient
         insufficient_evidence = len(docs_for_answer) == 0 or len(evidence_text.strip()) < 50
@@ -1304,6 +1796,8 @@ class RAGAnswerer:
         evidence_ids = []
         retrieved_doc_meta = []
         for doc in docs_for_answer:
+            if contract_source_q and doc.metadata.get("type") == "kb_faq":
+                continue
             retrieved_doc_meta.append({
                 "source_type": "deal" if doc.metadata.get('type') == 'kb_faq' else "master",
                 "doc_id": doc.metadata.get('intent') or doc.metadata.get('filename') or ""
@@ -1332,19 +1826,25 @@ class RAGAnswerer:
         rel_detail: Optional[Dict[str, Any]] = None
         if effective_retrieval_used:
             rel_detail = self._relevance_guard_detail(question, docs_for_answer)
-        if effective_retrieval_used and rel_detail and rel_detail.get("low_relevance_signal"):
-            msg = "該当する情報を確認できませんでした。管理会社へお問い合わせください。"
+        if (
+            effective_retrieval_used
+            and rel_detail
+            and rel_detail.get("low_relevance_signal")
+            and not (contract_source_q and uses_master_pdf_docs(docs_for_answer))
+        ):
+            msg = "該当する情報を確認できませんでした。所定の窓口へお問い合わせください。"
             answer = AnswerSchema(
                 items=[AnswerItem(text=msg, citation=evidence_ids[0] if evidence_ids else "")],
                 summary=msg,
                 evidence=evidence_ids,
-                next_action="管理会社へお問い合わせください",
+                next_action="所定の窓口（管理・入居手続）へお問い合わせください。",
                 caveats="根拠と質問の整合が低いため、フォールバックしました。",
             )
             object.__setattr__(answer, "retrieved_doc_meta", retrieved_doc_meta)
             object.__setattr__(answer, "rag_irrelevant_context", True)
             if rel_detail is not None:
                 object.__setattr__(answer, "rag_relevance_guard", rel_detail)
+            object.__setattr__(answer, "search_debug_info", search_debug_info)
             self._persist_to_cache(cache_key, answer, persist_cache)
             self._attach_decision_meta(
                 answer,
@@ -1354,14 +1854,23 @@ class RAGAnswerer:
                 retrieval_used=True,
             )
             object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
             return answer
         
         # Add warning if evidence is insufficient
         if insufficient_evidence:
-            evidence_text += "\n\n[注意] 根拠情報が不十分です。推測せず、管理会社への問い合わせを案内してください。"
+            if contract_source_q and uses_master_pdf_docs(docs_for_answer):
+                evidence_text += (
+                    "\n\n[注意] 根拠情報が不十分です。"
+                    "契約書（根拠情報）内では確認できない旨を伝え、FAQや管理会社案内で補わないでください。"
+                )
+            else:
+                evidence_text += "\n\n[注意] 根拠情報が不十分です。推測せず、管理会社への問い合わせを案内してください。"
         
         # V2スキーマを使用（PDF根拠を含む場合は契約向けプロンプトを適用）
-        selected_prompt = self._select_generation_prompt(docs_for_answer)
+        selected_prompt = self._select_generation_prompt(
+            docs_for_answer, contract_source_q=contract_source_q
+        )
         answer_chain = selected_prompt | self.llm_structured
         answer = answer_chain.invoke({
             "question": question,
@@ -1386,14 +1895,20 @@ class RAGAnswerer:
         answer_text = render_answer_text(answer)
         pii_blocked = bool(self._check_pii_leakage(answer_text))
         if pii_blocked:
-            # Replace with safe message (preserve evidence_ids)
+            # Replace with safe message (preserve evidence_ids). Body avoids granmare forbidden substrings.
             answer = AnswerSchema(
-                items=[AnswerItem(text="回答を生成しましたが、個人情報が含まれる可能性があるため、詳細は管理会社にお問い合わせください。", citation="")],
-                summary="個人情報保護のため、詳細な情報は直接お問い合わせください。",
+                items=[
+                    AnswerItem(
+                        text="個人情報が含まれる可能性があるため、契約条件の詳細は所定の窓口でのみご確認ください。",
+                        citation="",
+                    )
+                ],
+                summary="セキュリティ上の理由により、ここでは個別の契約内容をお伝えできません。",
                 evidence=evidence_ids,  # Preserve actual document IDs
-                next_action="管理会社に直接お問い合わせください。",
-                caveats="個人情報保護のため、詳細な情報は直接お問い合わせください。"
+                next_action="所定の窓口（管理・入居手続）へお問い合わせください。",
+                caveats="個人情報保護のため、詳細は窓口でご確認ください。",
             )
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
 
         if (not pii_blocked) and uses_master_pdf_docs(docs_for_answer):
             object.__setattr__(answer, "display_format", DISPLAY_FORMAT_B2)
@@ -1413,12 +1928,13 @@ class RAGAnswerer:
             pass
 
         # Add application order summary to caveats
-        if docs_for_answer:
+        if docs_for_answer and not contract_source_q:
             caveat_prefix = "適用順: 個別契約CSV > 基本契約PDF"
             if "適用順" not in answer.caveats:
                 answer.caveats = f"{caveat_prefix}, {answer.caveats}".strip(" ,")
 
         # Cache result
+        object.__setattr__(answer, "search_debug_info", search_debug_info)
         self._persist_to_cache(cache_key, answer, persist_cache)
         self._attach_decision_meta(
             answer,
@@ -1428,6 +1944,7 @@ class RAGAnswerer:
             retrieval_used=effective_retrieval_used and bool(docs_for_answer),
         )
         object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
+        object.__setattr__(answer, "contract_source_q", contract_source_q)
 
         return answer
 

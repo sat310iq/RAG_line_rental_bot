@@ -1,0 +1,21 @@
+# Legacy eval slug / English ID -> canonical FAQ intent (faq_kb.csv intent column) or PDF id.
+# Used only on the evaluation path (EvalIDMapper); does not change retrieval indexing.
+aliases:
+  restoration: 契約_原状回復
+  renewal: 契約_更新
+  common_fee: 管理会社_連絡先
+  termination: 契約_退去解約
+  equipment_repair: 設備_故障
+  ゴミ出し_基本: ゴミ出し_ルール
+  care_duty: 生活_騒音
+  parking: 駐車場_利用
+  internet_contact: 生活_インターネット
+  water_bill_contact: 生活_水道請求
+  water_leak_response: 設備_水漏れ
+  fire_alarm_response: 設備_火災警報
+  suspicious_person: 防犯_不審者
+  noise_neighbor: 生活_騒音
+  electricity_contact: 生活_電気
+  moveout_cancel: 契約_退去解約
+  certificate_issue: 契約_証明書
+  shared_entrance_lighting: 設備_共用部照明

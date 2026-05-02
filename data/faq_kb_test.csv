@@ -1,0 +1,4 @@
+intent,category,keywords,answer,response_type,confidence_level,required_inputs,urgency,conditions,effective_from,effective_to,escalation,escalation_reason,handoff_message,notes,contract_id,topic,precedence,override_flag,citations,fallback_to_master,answer_complete,effective_date,version
+テスト_上書きA,規則,禁止 特約,特約により禁止事項が追加されています。,policy,high,,low,,,,bot_only,,,テスト,,prohibited,300,override,特約第1条,true,false,,
+テスト_上書きB,規則,禁止 個別,個別契約で禁止事項が定められています。,policy,high,,low,,,,bot_only,,,テスト,,prohibited,200,addition,個別第2条,true,false,,
+テスト_参照,契約,解除 参照,基本契約を参照してください。,instruction,medium,,low,,,,bot_only,,,テスト,,termination,250,reference,個別第3条,true,false,,

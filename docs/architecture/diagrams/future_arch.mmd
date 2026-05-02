@@ -1,0 +1,19 @@
+%% 将来案: SkillSelector を QueryRouter 上位に置き、Skill 単位で手順・ツールを束ねる
+%% Phase 2 以降で具体化。現状フローは current_arch.mmd を正とする。
+
+flowchart TB
+  User[User]
+  Intent[Intent_router]
+  SkillSel[SkillSelector]
+  SkillFAQ[tenant_faq_skill]
+  SkillContract[contract_qa_skill]
+  Tools[Tools_RAG_scripts]
+  Out[Response]
+
+  User --> Intent
+  Intent --> SkillSel
+  SkillSel --> SkillFAQ
+  SkillSel --> SkillContract
+  SkillFAQ --> Tools
+  SkillContract --> Tools
+  Tools --> Out

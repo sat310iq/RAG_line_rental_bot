@@ -1,0 +1,23 @@
+%% 現状: 入居者向けルーティング + 必要時のみ RAG（契約参照）
+%% 編集は rental_rag_poc ルートを前提に mermaid 対応エディタで表示
+
+flowchart TB
+  User[User]
+  LineOrAPI[LINE_or_API]
+  QueryRouter[QueryRouter_and_rules]
+  KBFast[KB_fast_path]
+  RAGContract[RAG_contract_source]
+  LLM[LLM_structured_answer]
+  Escalation[Escalation_or_clarification]
+
+  User --> LineOrAPI
+  LineOrAPI --> QueryRouter
+  QueryRouter --> KBFast
+  QueryRouter --> RAGContract
+  QueryRouter --> Escalation
+  KBFast --> LLM
+  RAGContract --> LLM
+  KBFast --> User
+  RAGContract --> User
+  Escalation --> User
+  LLM --> User

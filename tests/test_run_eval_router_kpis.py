@@ -86,6 +86,30 @@ def test_build_route_metrics_schema_v2_legacy_present(re):
     assert "by_ab_group" in leg
 
 
+def test_build_route_metrics_forced_leg_scoping_ab_compare(re):
+    out = re.build_route_metrics(
+        [],
+        d_auto_samples=[{"question": "q", "actual_route": "escalation"}],
+        ab_compare=True,
+    )
+    fs = out.get("forced_leg_scoping") or {}
+    assert fs.get("ab_compare") is True
+    assert (fs.get("d_group") or {}).get("d_escalation_kpi_source") == "extra_auto_runs"
+    assert (fs.get("d_group") or {}).get("extra_auto_run_count") == 1
+
+
+def test_build_eval_scoping_d_forced_leg(re):
+    s = re.build_eval_scoping("D", "kb_only", ab_compare=True)
+    assert s["d_forced_leg"] is True
+    assert s["row_role"] == "d_forced_kb_or_rag_leg"
+    s2 = re.build_eval_scoping("D", "auto", ab_compare=False)
+    assert s2["d_forced_leg"] is False
+    assert s2["row_role"] == "d_auto_router_kpi_row"
+    s3 = re.build_eval_scoping("A", "kb_only", ab_compare=True)
+    assert s3["row_role"] == "standard"
+    assert s3["d_escalation_kpi_from_separate_auto_run"] is False
+
+
 def test_infer_actual_route_fallback_used_is_fallback(re):
     from src.rag_answerer import AnswerItem, AnswerSchema
 
@@ -116,3 +140,18 @@ def test_infer_failure_tags_core_cases(re):
     assert "fallback_as_rule" in tags
     assert "wrong_intent_match" in tags
     assert "overbroad_rule" in tags
+
+
+def test_infer_actual_route_clarification_priority(re):
+    from src.rag_answerer import AnswerItem, AnswerSchema
+
+    ans = AnswerSchema(
+        items=[AnswerItem(text="clarify", citation="")],
+        summary="clarify",
+        evidence=[],
+        next_action="",
+        caveats="",
+    )
+    object.__setattr__(ans, "decision_path", "clarification")
+    cfg = type("Cfg", (), {"kb_fast_path_short_max_len": 10, "fallback_message": "fallback"})()
+    assert re.infer_actual_route("rag", ans, "ガス", cfg) == "clarification"

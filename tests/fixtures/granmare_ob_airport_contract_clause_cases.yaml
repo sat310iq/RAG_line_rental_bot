@@ -1,0 +1,119 @@
+# グランマーレ大分空港契約書.txt（data/documents）の特約条項①〜⑫に対応する
+# 「契約書・条項・記載箇所」を明示した質問セット（RAG master 参照を狙う文言）。
+# expected_snippets: 当該条項が契約テキストに含まれることのオフライン検証用（検索ヒットの最低条件）。
+
+contract_document: data/documents/グランマーレ大分空港契約書.txt
+
+cases:
+  - id: clause_01_water_excess
+    sequence: 1
+    question: >-
+      契約書の条項では、水道料が月額3,300円（税込）を超えた場合、超過分は誰が負担し何と書いてありますか。
+      該当箇所を示してください。
+    expected_snippets:
+      - "水道料"
+      - "3,300円"
+      - "超過"
+
+  - id: clause_02_transfer_fees
+    sequence: 2
+    question: >-
+      賃料の振込手数料や口座振替手数料は、契約書の特約では誰の負担とされていますか。根拠となる記載を教えてください。
+    expected_snippets:
+      - "振込手数料"
+      - "口座振替手数料"
+      - "賃借人の負担"
+
+  - id: clause_03_key_loss
+    sequence: 3
+    question: >-
+      室内鍵を紛失した場合の鍵交換費用は、契約書上どのように定められていますか。該当条項を示してください。
+    expected_snippets:
+      - "室内鍵"
+      - "紛失"
+      - "鍵交換"
+
+  - id: clause_04_early_termination_penalty
+    sequence: 4
+    question: >-
+      契約書の条項では、契約日から6ヶ月以内・12ヶ月以内・24ヶ月以内に解約した場合の短期解約違約金は
+      それぞれいくらと書いてありますか。記載箇所を示してください。
+    expected_snippets:
+      - "短期解約違約金"
+      - "114,600円"
+      - "76,400円"
+      - "38,200円"
+
+  - id: clause_05_minor_repairs
+    sequence: 5
+    question: >-
+      襖・網戸・電球・パッキンなどの軽微な補修・交換費用は、契約書の特約では誰の負担ですか。
+    expected_snippets:
+      - "襖"
+      - "網戸"
+      - "軽微な補修"
+
+  - id: clause_06_moveout_cleaning
+    sequence: 6
+    question: >-
+      退去時の室内清掃およびエアコン清掃（メンテナンス）料は、契約書では誰の負担と定められていますか。
+    expected_snippets:
+      - "退去時の室内清掃"
+      - "エアコン清掃"
+      - "賃借人様の負担"
+
+  - id: clause_07_brokerage_fee_refund
+    sequence: 7
+    question: >-
+      契約時に支払った仲介手数料は、解約時や入居前でも返金されると契約書に書いてありますか。該当箇所を示してください。
+    expected_snippets:
+      - "仲介手数料"
+      - "返金しません"
+
+  - id: clause_08_certificate_fee
+    sequence: 8
+    question: >-
+      車庫証明書や家賃証明書の手数料金額と、郵送時の送付先の制限は、契約書のどこに書いてありますか。
+    expected_snippets:
+      - "車庫証明書"
+      - "家賃証明書"
+      - "2,000円"
+      - "契約者住所"
+
+  - id: clause_09_fire_insurance
+    sequence: 9
+    question: >-
+      借家人賠償・家財付き火災保険の加入は、契約書の条項ではどのように定められていますか。
+    expected_snippets:
+      - "借家人賠償"
+      - "火災保険"
+      - "必ず加入"
+
+  - id: clause_10_internet
+    sequence: 10
+    question: >-
+      インターネット利用が無料であること、およびサービス停止時に代替サービスを求められないことは、
+      契約書の特約のどこに書いてありますか。
+    expected_snippets:
+      - "インターネット"
+      - "無料"
+      - "代替サービス"
+
+  - id: clause_11_single_occupancy
+    sequence: 11
+    question: >-
+      単身者用マンションで契約者以外の入居が認められないことや、同居人が発見された場合の扱いは、
+      契約書のどの条項周辺に書いてありますか。
+    expected_snippets:
+      - "単身者用"
+      - "契約者以外の入居"
+      - "第10条"
+
+  - id: clause_12_no_smoking
+    sequence: 12
+    question: >-
+      敷地内外の禁煙および、喫煙に伴う原状回復の範囲は、契約書の条項ではどう書かれていますか。該当箇所を示してください。
+    expected_snippets:
+      - "禁煙"
+      - "原状回復"
+      - "喫煙"

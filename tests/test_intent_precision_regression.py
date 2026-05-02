@@ -26,6 +26,15 @@ def test_faq_water_leak_has_negative_keywords():
     assert "修繕" in neg
     assert "大家負担" in neg
     assert "水道の" not in (row.get("keywords") or "")
+    assert "ガス料金" in neg or "家賃減額" in neg
+
+
+def test_faq_gas_fee_has_cross_domain_negative_keywords():
+    root = Path(__file__).resolve().parent.parent
+    row = _faq_row_intent(root / "data" / "faq_kb.csv", "生活_ガス料金")
+    neg = (row.get("negative_keywords") or "").strip()
+    assert "水道" in neg or "ゴミ" in neg
+    assert "家賃" in neg
 
 
 def test_faq_noise_row_has_legal_negative():

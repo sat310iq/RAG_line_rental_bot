@@ -79,3 +79,24 @@ scripts/*.local.sh
 
 # Cursor
 .cursor/debug.log
+
+# Cursor rules (local editor config)
+.cursor/rules/
+.cursorrules
+
+# Python version (local environment)
+.python-version
+
+# Eval local analysis artifacts
+data/eval/ab_diff_report.jsonl
+data/eval/failure_backlog_top10.jsonl
+data/eval/failure_patterns.csv
+data/eval/route_mismatch_report.jsonl
+data/eval/smoke_before_after.md
+data/eval/smoke_known_conflicts.md
+data/eval/smoke_miss_analysis.csv
+data/eval/smoke_miss_summary.md
+
+# Docker local config
+.dockerignore
+.gcloudignore

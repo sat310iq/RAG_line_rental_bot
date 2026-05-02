@@ -1,5 +1,6 @@
 """Response generator using schema columns as control parameters."""
 
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Literal, Tuple
 from pydantic import BaseModel, Field
@@ -7,13 +8,19 @@ from langchain_core.documents import Document
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate
 from src.config import Config
+from src.kb_fast_path import normalize_for_match
+from src.utils.question_terms import (
+    count_distinct_pipe_tokens_in_question,
+    count_pipe_field_hits,
+    has_content_keyword_hit,
+)
 
 
 class CitationSchema(BaseModel):
     """Citation schema for OpenAI compatibility."""
-    intent: str = Field(description="Intent ID")
-    row_index: int = Field(description="Row index")
-    score: float = Field(description="Relevance score")
+    intent: Optional[str] = Field(default=None, description="Intent ID")
+    row_index: Optional[int] = Field(default=None, description="Row index")
+    score: Optional[float] = Field(default=None, description="Relevance score")
 
 
 class ResponseSchema(BaseModel):
@@ -27,11 +34,25 @@ class ResponseSchema(BaseModel):
     required_inputs: List[str] = Field(description="Required input fields")
     escalation: Literal["bot_only", "management_required", "owner_required", "conditional_owner"] = Field(description="Escalation type")
     handoff_message: Optional[str] = Field(default=None, description="Handoff message for escalation")
-    citations: List[CitationSchema] = Field(description="Citation information")
+    citations: List[CitationSchema] = Field(default_factory=list, description="Citation information")
 
 
 class Responder:
     """Response generator using schema columns for control."""
+    
+    # Exception phrases to remove from high-confidence policy answers
+    EXCEPTION_PHRASES = [
+        "例外がある場合があります",
+        "原則として",
+        "可能性があります",
+        "場合によっては",
+        "許可されることがあります",
+        "詳細は管理会社に",
+        "状況に応じて",
+        "相談の上で可能",
+        "詳細は管理会社にご確認ください",
+        "念のため管理会社に",
+    ]
     
     def __init__(self, config: Config):
         """Initialize responder.
@@ -72,7 +93,7 @@ class Responder:
 
 4. **スキーマ列による制御**: 以下のルールに従って回答を構成すること:
    - urgency=high または response_type=warning → 冒頭に【緊急／注意】＋一次対応を必ず含める
-   - required_inputs が非空 → 必要項目を列挙して質問を返す（answerを全部出さないでも良い）
+   - required_inputs が非空 → **検索結果のanswer本文を必ずそのまま含める（省略禁止）**。連絡先・手順がanswerにあれば必ず反映する。そのうえで、確認してほしい項目としてrequired_inputsを箇条書きで追記してよい（answerの置き換えにしない）
    - confidence_level=medium/low → 「原則」「例外」「確認誘導」を必ず含める
    - escalation != bot_only → 末尾に人対応案内＋handoff_messageを含める
 
@@ -80,10 +101,12 @@ class Responder:
    - fact: 事実説明（淡々と）
    - instruction: 行動手順（箇条書き）
    - warning: 危険/注意（強め、最優先）
-   - policy: ルール/規約（原則＋例外の順）
+   - policy: ルール/規約
+     * confidence_level=high の場合: 「全面的に禁止」「一切認められない」などの断定的な表現のみを使用。例外の言及は一切含めない。
+     * confidence_level=medium/low の場合: 「原則＋例外の順」で構成
 
 6. **confidence_levelに応じた表現**:
-   - high: 断定して良い
+   - high: 断定して良い。検索結果の`answer`フィールドの内容をそのまま使用し、追加の説明や例外の言及は一切含めない。
    - medium: 「原則」「例外あり」を含める
    - low: 「念のため管理会社へ」誘導を入れる
 
@@ -92,13 +115,58 @@ class Responder:
 - escalation_reasonやhandoff_messageの値はescalationフィールドには使用しないでください。これらは別のフィールドです。
 - 検索結果の各ドキュメントには「escalation: [値]」という行があります。その値をそのまま使用してください。
 
+**citationsフィールドの生成（必須）**:
+- citationsフィールドには、検索結果の各ドキュメントから抽出したCitationSchemaのリストを必ず含めること
+- 各CitationSchemaには以下の情報を含めること:
+  - intent: 検索結果の「intent」フィールドの値（例: "契約_証明書"）
+  - row_index: 検索結果の「row_index」フィールドの値（存在する場合、デフォルトは0）
+  - score: 関連度スコア（1.0を推奨、または検索結果の順序に基づいて0.9, 0.8など）
+- 検索結果が複数ある場合、すべてのドキュメントのcitationsを含めること（最大3件まで）
+- citationsフィールドは空のリストにしてはいけません。最低1件は含めること
+
 例:
 - 検索結果に「escalation: management_required」とあれば、escalationフィールドには"management_required"を設定
 - 検索結果に「escalation_reason: 日程調整・立会いが必要」とあっても、escalationフィールドには使用しない（これはescalation_reasonフィールド用）
+- 検索結果に「intent: 契約_証明書」「row_index: 12」とあれば、citationsには[{"intent": "契約_証明書", "row_index": 12, "score": 1.0}]を含める
 
 回答を生成してください。検索結果にない情報は含めないでください。
 """)
     
+    def _kb_question_evidence_aligned(self, question: str, metadata: Dict[str, Any]) -> bool:
+        """Require minimal overlap between question tokens and KB row signals (keywords + answer)."""
+        exclude = metadata.get("exclude_keywords") or ""
+        if exclude and count_pipe_field_hits(question, str(exclude)) > 0:
+            return False
+        neg = (metadata.get("negative_keywords") or "").strip()
+        if neg:
+            tokens = [t for t in re.split(r"[\s|]+", neg) if t]
+            if any(t in question for t in tokens):
+                return False
+        qn = normalize_for_match(question)
+        short = len(qn) <= int(getattr(self.config, "kb_fast_path_short_max_len", 10) or 10)
+        hits = count_distinct_pipe_tokens_in_question(
+            question,
+            str(metadata.get("keywords") or ""),
+            str(metadata.get("keywords_primary") or ""),
+        )
+        min_h = 2 if short else int(getattr(self.config, "responder_kb_min_keyword_hits", 1) or 1)
+        if hits >= min_h:
+            return True
+        hay = "\n".join(
+            x
+            for x in (
+                metadata.get("answer") or "",
+                metadata.get("canonical_question") or "",
+            )
+            if x
+        )
+        return has_content_keyword_hit(
+            question,
+            hay,
+            stopwords=self.config.question_term_stopwords or None,
+            synonyms=self.config.question_term_synonyms or None,
+        )
+
     def _format_retrieved_docs(self, documents: List[Document]) -> str:
         """Format retrieved documents for prompt.
         
@@ -145,6 +213,20 @@ class Responder:
         
         return "\n\n".join(formatted)
     
+    def _sanitize_policy_answer(self, text: str) -> str:
+        """Remove exception language from high-confidence policy answers.
+        
+        Args:
+            text: Answer text to sanitize
+            
+        Returns:
+            Sanitized text with exception phrases removed
+        """
+        sanitized = text
+        for phrase in self.EXCEPTION_PHRASES:
+            sanitized = sanitized.replace(phrase, "")
+        return sanitized.strip()
+    
     def generate(
         self,
         question: str,
@@ -177,10 +259,29 @@ class Responder:
                 citations=[]
             ), "申し訳ございませんが、該当する情報が見つかりませんでした。管理会社にお問い合わせください。"
         
-        # Use top document as primary source
+        # Use top document as primary source (trust retriever ranking)
         top_doc = retrieved_docs[0]
         metadata = top_doc.metadata
-        
+
+        if (
+            getattr(self.config, "responder_kb_alignment_enabled", True)
+            and metadata.get("type") == "kb_faq"
+            and not self._kb_question_evidence_aligned(question, metadata)
+        ):
+            fb = (self.config.responder_misalignment_fallback_message or "").strip()
+            return ResponseSchema(
+                selected_intent="unknown",
+                selected_category="unknown",
+                response_type="fact",
+                confidence_level="low",
+                answer_text=fb,
+                urgency="low",
+                required_inputs=[],
+                escalation="management_required",
+                handoff_message=None,
+                citations=[],
+            ), fb
+
         # Extract schema columns
         intent = metadata.get('intent', 'unknown')
         category = metadata.get('category', '')
@@ -204,37 +305,52 @@ class Responder:
             escalation = "bot_only"
         
         # Generate structured response
-        try:
-            response = self.llm_structured.invoke(
-                self.response_prompt.format_messages(
-                    question=question,
-                    retrieved_docs=formatted_docs,
-                    top_k=len(retrieved_docs)
+        # For KB CSV responses, use metadata directly to avoid LLM schema errors.
+        use_llm_structured = False
+        if use_llm_structured:
+            try:
+                response = self.llm_structured.invoke(
+                    self.response_prompt.format_messages(
+                        question=question,
+                        retrieved_docs=formatted_docs,
+                        top_k=len(retrieved_docs)
+                    )
                 )
-            )
-            # Always use metadata escalation value to ensure correctness (LLM may confuse escalation_reason)
-            response.escalation = escalation
-            # Ensure citations are properly formatted
-            if not response.citations:
-                response.citations = [CitationSchema(
-                    intent=intent,
-                    row_index=metadata.get('row_index', 0),
-                    score=1.0
-                )]
-            # Also ensure other critical fields match metadata if LLM made mistakes
-            if response.selected_intent != intent:
-                response.selected_intent = intent
-            if response.selected_category != category:
-                response.selected_category = category
-            if response.response_type != response_type:
-                response.response_type = response_type
-            if response.confidence_level != confidence_level:
-                response.confidence_level = confidence_level
-            if response.urgency != urgency:
-                response.urgency = urgency
-        except Exception as e:
-            print(f"Error generating structured response: {e}")
-            # Fallback to simple response using metadata values directly
+                # Always use metadata escalation value to ensure correctness (LLM may confuse escalation_reason)
+                response.escalation = escalation
+                # Ensure citations are properly formatted
+                if not response.citations:
+                    response.citations = [CitationSchema(
+                        intent=intent,
+                        row_index=metadata.get('row_index', 0),
+                        score=1.0
+                    )]
+                else:
+                    # Fill missing intent/row_index if LLM omitted
+                    for citation in response.citations:
+                        if not citation.intent:
+                            citation.intent = intent
+                        if citation.row_index is None:
+                            citation.row_index = metadata.get('row_index', 0)
+                        if citation.score is None:
+                            citation.score = 1.0
+                # Also ensure other critical fields match metadata if LLM made mistakes
+                if response.selected_intent != intent:
+                    response.selected_intent = intent
+                if response.selected_category != category:
+                    response.selected_category = category
+                if response.response_type != response_type:
+                    response.response_type = response_type
+                if response.confidence_level != confidence_level:
+                    response.confidence_level = confidence_level
+                if response.urgency != urgency:
+                    response.urgency = urgency
+            except Exception as e:
+                print(f"Error generating structured response: {e}")
+                use_llm_structured = False
+        
+        if not use_llm_structured:
+            # Use metadata values directly
             response = ResponseSchema(
                 selected_intent=intent,
                 selected_category=category,
@@ -252,7 +368,7 @@ class Responder:
                 )]
             )
         
-        # Build human-readable text
+        # Build human-readable text (order: header → KB body → disclaimers/handoff → optional follow-up questions)
         text_parts = []
         
         # Rule 1: urgency=high or response_type=warning → emergency header
@@ -260,18 +376,11 @@ class Responder:
             text_parts.append("【緊急・注意】")
             text_parts.append("")
         
-        # Rule 2: required_inputs → ask for inputs
-        if required_inputs and not user_inputs:
-            text_parts.append("以下の情報をお教えください：")
-            for req_input in required_inputs:
-                text_parts.append(f"  - {req_input}")
-            text_parts.append("")
-            # Don't show full answer yet if inputs are missing
-            if not user_inputs:
-                text_parts.append("情報をいただけ次第、詳細な対応方法をご案内いたします。")
-                return response, "\n".join(text_parts)
+        # Post-process: Remove exception language for high confidence policy responses
+        if confidence_level == "high" and response_type == "policy":
+            response.answer_text = self._sanitize_policy_answer(response.answer_text)
         
-        # Main answer
+        # KB body first: required_inputs must not replace or omit the base answer
         text_parts.append(response.answer_text)
         
         # Rule 3: confidence_level=medium/low → add disclaimer
@@ -289,7 +398,16 @@ class Responder:
             if handoff_message:
                 text_parts.append(f"（{handoff_message}）")
         
+        # Rule 5: optional follow-up fields (after KB answer; not a substitute for answer)
+        if required_inputs and not user_inputs:
+            text_parts.append("")
+            text_parts.append("より正確な対応のため、以下をお知らせください：")
+            for req_input in required_inputs:
+                text_parts.append(f"  - {req_input}")
+        
         # Generate escalation data (structured JSON) if escalation needed and tenant info available
+        # Note: escalation_data is not stored in ResponseSchema to avoid OpenAI compatibility issues
+        # It will be generated in rag_answerer.py if needed
         escalation_data = None
         if escalation != "bot_only" and tenant_info:
             escalation_data = {
@@ -305,7 +423,9 @@ class Responder:
                 "handoff_message": handoff_message,
                 "timestamp": datetime.now().isoformat()
             }
-            response.escalation_data = escalation_data
+            # Store escalation_data as a separate attribute (not in schema)
+            # Use setattr to avoid Pydantic validation errors
+            object.__setattr__(response, 'escalation_data', escalation_data)
         
         human_text = "\n".join(text_parts)
         

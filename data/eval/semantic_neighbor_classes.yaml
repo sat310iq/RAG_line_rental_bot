@@ -1,0 +1,7 @@
+# Optional (week 2+): neighbor classes for semantic_neighbor_hit / match_tier_semantic_rate.
+# Each item: anchor id + neighbors[] in the same semantic class (see OPIK_DASHBOARD_RUNBOOK.md).
+# Example:
+# pairs:
+#   - anchor: "契約_原状回復"
+#     neighbors: ["グランマーレ大分空港契約書.pdf p12"]
+pairs: []

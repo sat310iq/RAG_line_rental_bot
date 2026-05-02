@@ -30,11 +30,17 @@ DEFAULT_CLARIFICATION_FALLBACK = (
 )
 
 AMBIGUOUS_TOPIC_PATTERNS = (
+    # Short stems (substring match on raw question)
     "水道の件",
     "修繕について",
     "契約について",
     "更新の件",
     "騒音のことで",
+    # Common LINE phrasings (explicit; also covered by stems above)
+    "水道の件なんですが",
+    "修繕について教えてください",
+    "契約について聞きたい",
+    "更新の件です",
 )
 AMBIGUOUS_TOPIC_TERMS = ("水道", "修繕", "契約", "更新", "騒音", "ガス", "証明書")
 

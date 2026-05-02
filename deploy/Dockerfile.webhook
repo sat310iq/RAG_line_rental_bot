@@ -1,0 +1,21 @@
+# LINE Webhook (RAG + Reply + Pub/Sub). Cloud Run: PORT=8080.
+# Build context: project root. Ensure data/vector_store exists (run: python scripts/reindex_vector_db.py).
+
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY data/ ./data/
+
+# App expects vector store at data/vector_store (and data/documents, data/faq_kb.csv).
+# If data/vector_store is missing, run locally: python scripts/reindex_vector_db.py
+
+EXPOSE 8080
+CMD uvicorn src.api.main:app --host 0.0.0.0 --port ${PORT}

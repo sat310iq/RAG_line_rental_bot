@@ -1,0 +1,467 @@
+# グランマーレ大分空港契約書.txt の構造に沿い、頭書・別表・特約各号・本文各条につき
+# 1問ずつ（契約書参照を明示した質問 + expected_snippets）を定義する。
+contract_document: data/documents/グランマーレ大分空港契約書.txt
+
+# 契約書QA integration テスト: 各ケースの forbidden は eval_defaults とマージされる。
+# required_keywords が無い場合は expected_snippets の先頭2件を必須キーワードとして使う。
+eval_defaults:
+  forbidden_keywords:
+    - "管理会社へお問い合わせください"
+    - "管理会社にお問い合わせください"
+    - "公式サイト"
+    - "次アクション"
+    - "この件は管理会社での対応が必要"
+
+cases:
+  # --- 頭書（条項番号なし・セクション単位） ---
+  - id: tosho_1_mokutekibutsu
+    group: 頭書
+    label: "（1）賃貸借の目的物"
+    question: >-
+      契約書の頭書（1）賃貸借の目的物では、物件名称・所在地・構造・住戸408号室の面積はどのように記載されていますか。
+    expected_snippets:
+      - "グランマーレ大分空港"
+      - "873-0231"
+      - "RC造"
+      - "408号室"
+      - "28.71㎡"
+
+  - id: tosho_2_keiyakukikan
+    group: 頭書
+    label: "（2）契約期間"
+    question: >-
+      契約書の頭書（2）に記載の契約期間の起算・満了はいつからいつまでと書いてありますか。
+    expected_snippets:
+      - "2026年03月15日"
+      - "2028年03月14日"
+
+  - id: tosho_3_chinryo_hiyo
+    group: 頭書
+    label: "（3）賃料・費用"
+    question: >-
+      契約書の頭書（3）では、家賃・共益費・水道料・敷金・礼金はそれぞれいくらと記載されていますか。
+    expected_snippets:
+      - "31,700円"
+      - "2,500円"
+      - "3,300円"
+      - "敷金"
+      - "0円"
+
+  # --- 原状回復（別表）・部位ごと ---
+  - id: gensho_yuka
+    group: 原状回復別表
+    label: "床"
+    question: >-
+      原状回復の別表（床）では、賃貸人負担と賃借人負担にそれぞれどのような例が挙げられていますか。
+    expected_snippets:
+      - "畳の裏返し、表替え（特に破損していないが、次の入居者確保のために行うもの）"
+      - "カーペットに飲み物等をこぼしたことによるシミ、カビ"
+
+  - id: gensho_kabe_tenjo
+    group: 原状回復別表
+    label: "壁・天井"
+    question: >-
+      原状回復の別表（壁・天井）では、賃貸人負担と賃借人負担の例として何が書かれていますか。
+    expected_snippets:
+      - "いわゆる電気ヤケ"
+      - "タバコのヤニ、臭い"
+
+  - id: gensho_kenzu_setubi
+    group: 原状回復別表
+    label: "建具・設備"
+    question: >-
+      原状回復の別表（建具・設備）では、エアコン洗浄や鍵紛失は誰負担の例として扱われていますか。
+    expected_snippets:
+      - "エアコンの内部洗浄（喫煙等の臭いなどが付着していない場合）"
+      - "鍵の紛失又は破損による取替え"
+
+  # --- Ⅱ 例外特約 ---
+  - id: reikai_bubetsu
+    group: 例外特約
+    label: "部位別負担"
+    question: >-
+      契約書のⅡ例外特約（部位別負担）では、畳・フローリング・クロス・柱の負担単位と備考はどう書かれていますか。
+    expected_snippets:
+      - "1枚単位"
+      - "㎡単位"
+      - "6年で価値1円"
+
+  - id: reikai_tabako_pet
+    group: 例外特約
+    label: "タバコ・ペット"
+    question: >-
+      例外特約のタバコ・ペットの表では、居室やペットに関する負担はどのように定められていますか。
+    expected_snippets:
+      - "居室全体クリーニング・張替"
+      - "全面原状回復（契約違反時）"
+
+  # --- 退去時クリーニング・設備経過年数 ---
+  - id: taikyo_cleaning_hiyo
+    group: 退去時クリーニング
+    label: "費用表"
+    question: >-
+      退去時クリーニング費用の表では、1R・1Kとエアコン清掃の金額はどのように記載されていますか。
+    expected_snippets:
+      - "22,000～25,000円"
+      - "+10,000円"
+
+  - id: setsubi_nenchu_keisan
+    group: 設備経過年数
+    label: "負担割合"
+    question: >-
+      設備の経過年数と負担割合の記載では、耐用年数と残存価値について何と書いてありますか。
+    expected_snippets:
+      - "耐用年数：6年または8年"
+      - "最終1円"
+
+  # --- 特約条項 ①〜⑫ ---
+  - id: tokuyaku_01
+    group: 特約
+    label: "①水道料超過"
+    question: >-
+      契約書の特約①では、水道料3,300円超過時の水道料の扱いはどう定められていますか。
+    expected_snippets:
+      - "水道料3,300円(税込)を超過した場合"
+      - "超過分の水道料"
+
+  - id: tokuyaku_02
+    group: 特約
+    label: "②振込等手数料"
+    question: >-
+      特約②に、賃料支払時の振込手数料・口座振替手数料の負担は誰と書いてありますか。
+    expected_snippets:
+      - "振込手数料や口座振替手数料"
+      - "賃借人の負担とする"
+
+  - id: tokuyaku_03
+    group: 特約
+    label: "③鍵紛失"
+    question: >-
+      特約③では、室内鍵の紛失時の鍵交換費用は誰の負担とされていますか。
+    expected_snippets:
+      - "室内鍵は賃借人の責任で保管"
+      - "鍵交換を行うこととします"
+
+  - id: tokuyaku_04
+    group: 特約
+    label: "④短期解約違約金"
+    question: >-
+      特約④の短期解約違約金は、6ヶ月以内・12ヶ月以内・24ヶ月以内でそれぞれ賃料何ヶ月分と記載されていますか。
+    required_keywords:
+      any_of:
+        - ["6ヶ月以内", "3ヶ月分"]
+        - ["12ヶ月以内", "2ヶ月分"]
+        - ["24ヶ月以内", "1ヶ月分"]
+    expected_snippets:
+      - "114,600円"
+      - "76,400円"
+      - "38,200円"
+
+  - id: tokuyaku_05
+    group: 特約
+    label: "⑤軽微補修"
+    question: >-
+      特約⑤では、襖・網戸・電球・パッキン等の軽微な補修費用は誰負担ですか。
+    expected_snippets:
+      - "襖、網戸、電球、パッキン"
+      - "賃借人の負担とします"
+
+  - id: tokuyaku_06
+    group: 特約
+    label: "⑥退去清掃等"
+    question: >-
+      特約⑥の退去時室内清掃・エアコン清掃料の負担はどのように書かれていますか。
+    expected_snippets:
+      - "退去時の室内清掃、エアコン清掃"
+      - "賃借人様の負担とします"
+
+  - id: tokuyaku_07
+    group: 特約
+    label: "⑦仲介手数料返金"
+    question: >-
+      特約⑦では、仲介手数料の解約時の返金について何と定められていますか。
+    expected_snippets:
+      - "仲介手数料"
+      - "返金しません"
+
+  - id: tokuyaku_08
+    group: 特約
+    label: "⑧証明書手数料"
+    question: >-
+      特約⑧の車庫証明・家賃証明の手数料と郵送先の制限は契約書にどう書いてありますか。
+    expected_snippets:
+      - "2,000円（税別）"
+      - "契約者住所に限ります"
+
+  - id: tokuyaku_09
+    group: 特約
+    label: "⑨火災保険"
+    question: >-
+      特約⑨の借家人賠償・火災保険の加入義務はどのように規定されていますか。
+    expected_snippets:
+      - "借家人賠償及び家財保険付き火災保険"
+      - "必ず加入することとします"
+
+  - id: tokuyaku_10
+    group: 特約
+    label: "⑩インターネット"
+    question: >-
+      特約⑩では、インターネット無料とサービス停止時の従属義務・代替要求禁止はどう書かれていますか。
+    expected_snippets:
+      - "インターネットの利用については無料"
+      - "代替サービスの提供及び賃料負担軽減等の要求は一切できない"
+
+  - id: tokuyaku_11
+    group: 特約
+    label: "⑪単身・同居"
+    question: >-
+      特約⑪では、単身者用マンションでの同居人発見時の扱いと第10条違反時の違約金はどう記載されていますか。
+    expected_snippets:
+      - "単身者用マンション"
+      - "第10条の違反により"
+      - "違約金2ヶ月分"
+
+  - id: tokuyaku_12
+    group: 特約
+    label: "⑫禁煙"
+    question: >-
+      特約⑫の敷地内外禁煙と喫煙に伴う原状回復の範囲は契約書にどう書いてありますか。
+    expected_snippets:
+      - "室内外ともに禁煙"
+      - "原状回復を行うものとする"
+
+  # --- 本文 第1条〜第26条 ---
+  - id: honbun_article_01
+    group: 本文
+    label: "第1条（契約の締結）"
+    question: >-
+      契約書本文の第1条（契約の締結）では、甲乙の契約の目的と名称はどのように規定されていますか。
+    expected_snippets:
+      - "第1条（契約の締結）"
+      - "建物賃貸借契約"
+
+  - id: honbun_article_02
+    group: 本文
+    label: "第2条（契約期間）"
+    question: >-
+      本文第2条では契約期間は何に従うと書かれていますか。
+    expected_snippets:
+      - "第2条（契約期間）"
+      - "頭書(2)に記載する通り"
+
+  - id: honbun_article_03
+    group: 本文
+    label: "第3条（使用目的）"
+    question: >-
+      本文第3条の本物件の使用目的についての定めは何ですか。
+    expected_snippets:
+      - "第3条（使用目的）"
+      - "居住のみを目的として"
+
+  - id: honbun_article_04
+    group: 本文
+    label: "第4条（賃料）"
+    question: >-
+      本文第4条では、賃料の支払いと日割り・改定についてどう書かれていますか。
+    expected_snippets:
+      - "第4条（賃料）"
+      - "頭書(3)の記載に従い"
+      - "日割り計算"
+
+  - id: honbun_article_05
+    group: 本文
+    label: "第5条（管理費・共益費等）"
+    question: >-
+      本文第5条の管理費・共益費等と維持管理費の関係はどう規定されていますか。
+    expected_snippets:
+      - "第5条（管理費・共益費等）"
+      - "維持管理費"
+
+  - id: honbun_article_06
+    group: 本文
+    label: "第6条（諸経費の負担）"
+    question: >-
+      本文第6条では電気・ガス等の使用料の負担は誰とされていますか。
+    expected_snippets:
+      - "第6条（諸経費の負担）"
+      - "全額乙または入居者の負担"
+
+  - id: honbun_article_07
+    group: 本文
+    label: "第7条（敷金）"
+    question: >-
+      本文第7条の敷金の預け入れについて契約書にどう書いてありますか。
+    expected_snippets:
+      - "第7条（敷金）"
+      - "敷金を甲に預け入れる"
+
+  - id: honbun_article_08
+    group: 本文
+    label: "第8条（反社会的勢力の排除）"
+    question: >-
+      本文第8条の確約事項として挙げられている反社会的勢力に関する内容は何ですか。
+    expected_snippets:
+      - "第8条（反社会的勢力の排除）"
+      - "暴力団"
+
+  - id: honbun_article_09
+    group: 本文
+    label: "第9条（善管注意義務）"
+    question: >-
+      本文第9条では乙の注意義務はどのように定められていますか。
+    expected_snippets:
+      - "第9条（善管注意義務）"
+      - "善良なる管理者の注意義務"
+
+  - id: honbun_article_10
+    group: 本文
+    label: "第10条（禁止又は制限される行為）"
+    question: >-
+      本文第10条で禁止・制限される行為として列挙されているのは何ですか。
+    expected_snippets:
+      - "第10条（禁止又は制限される行為）"
+      - "賃借権の譲渡、転貸、同居"
+
+  - id: honbun_article_11
+    group: 本文
+    label: "第11条（契約期間中の修繕）"
+    question: >-
+      本文第11条では修繕義務は誰にありますか。
+    expected_snippets:
+      - "第11条（契約期間中の修繕）"
+      - "甲は、乙が本物件を使用するために必要な修繕を行わなければならない"
+
+  - id: honbun_article_12
+    group: 本文
+    label: "第12条（一部滅失等による賃料の減額等）"
+    question: >-
+      本文第12条は、一部滅失等が乙の責めに帰し得ない場合の賃料について何と規定していますか。
+    expected_snippets:
+      - "第12条（一部滅失等による賃料の減額等）"
+      - "賃料は減額される"
+
+  - id: honbun_article_13
+    group: 本文
+    label: "第13条（契約の解除）"
+    question: >-
+      本文第13条では、甲の契約解除の要件は何ですか。
+    expected_snippets:
+      - "第13条（契約の解除）"
+      - "第4条第1項に規定する賃料の支払義務"
+
+  - id: honbun_article_14
+    group: 本文
+    label: "第14条（解約の申し入れ）"
+    question: >-
+      本文第14条の乙による解約の方法はどう書かれていますか。
+    expected_snippets:
+      - "第14条（解約の申し入れ）"
+      - "解約の申入れを行うことにより、本契約を解約することができる"
+
+  - id: honbun_article_15
+    group: 本文
+    label: "第15条（契約の消滅）"
+    question: >-
+      本文第15条では本契約が終了する場合として何が挙げられていますか。
+    expected_snippets:
+      - "第15条（契約の消滅）"
+      - "使用できなくなったときは、終了する"
+
+  - id: honbun_article_16
+    group: 本文
+    label: "第16条（明渡し）"
+    question: >-
+      本文第16条の明渡し義務について契約書にどうありますか。
+    expected_snippets:
+      - "第16条（明渡し）"
+      - "本物件を明渡さなければならない"
+
+  - id: honbun_article_17
+    group: 本文
+    label: "第17条（原状回復義務等）"
+    question: >-
+      本文第17条の原状回復についての原則は何ですか。
+    expected_snippets:
+      - "第17条（原状回復義務等）"
+      - "原状に復しなければならない"
+
+  - id: honbun_article_18
+    group: 本文
+    label: "第18条（更新）"
+    question: >-
+      本文第18条では契約の更新はどのようにできるとされていますか。
+    expected_snippets:
+      - "第18条（更新）"
+      - "協議により本契約を更新することができる"
+
+  - id: honbun_article_19
+    group: 本文
+    label: "第19条（有益費の償還等）"
+    question: >-
+      本文第19条の有益費の償還請求について何と書いてありますか。
+    expected_snippets:
+      - "第19条（有益費の償還等）"
+      - "金銭上の請求をすることができない"
+
+  - id: honbun_article_20
+    group: 本文
+    label: "第20条（立入り）"
+    question: >-
+      本文第20条では甲の立入りについてどう定められていますか。
+    expected_snippets:
+      - "第20条（立入り）"
+      - "本物件に立ち入ることができる"
+
+  - id: honbun_article_21
+    group: 本文
+    label: "第21条（連帯保証人）"
+    question: >-
+      本文第21条の連帯保証人の責任は何ですか。
+    expected_snippets:
+      - "第21条（連帯保証人）"
+      - "乙と連帯して本契約から生じる乙の一切の債務を負担する"
+
+  - id: honbun_article_22
+    group: 本文
+    label: "第22条（家賃債務保証業者の提供する保証）"
+    question: >-
+      本文第22条の保証会社の保証の利用について契約書にどうありますか。
+    expected_snippets:
+      - "第22条（家賃債務保証業者の提供する保証）"
+      - "別途定めるところによるものとし"
+
+  - id: honbun_article_23
+    group: 本文
+    label: "第23条（協議）"
+    question: >-
+      本文第23条では契約に定めのない事項はどう扱うとされていますか。
+    expected_snippets:
+      - "第23条（協議）"
+      - "信義誠実の原則に従い協議し"
+
+  - id: honbun_article_24
+    group: 本文
+    label: "第24条（遅延損害金）"
+    question: >-
+      本文第24条の遅延損害金の割合はいくらと記載されていますか。
+    expected_snippets:
+      - "第24条（遅延損害金）"
+      - "年１４．６％"
+
+  - id: honbun_article_25
+    group: 本文
+    label: "第25条（合意管轄裁判所）"
+    question: >-
+      本文第25条の紛争の管轄について契約書にどう書いてありますか。
+    expected_snippets:
+      - "第25条（合意管轄裁判所）"
+      - "専属的合意管轄裁判所とする"
+
+  - id: honbun_article_26
+    group: 本文
+    label: "第26条（特約条項）"
+    question: >-
+      本文第26条では特約の取扱いについて何と規定されていますか。
+    expected_snippets:
+      - "第26条（特約条項）"
+      - "頭書(7)に定めるとおりとする"

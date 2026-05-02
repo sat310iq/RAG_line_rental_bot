@@ -217,6 +217,8 @@ cp deploy/.env.gcp.example deploy/.env.gcp
 # Fill in your own values. Do not commit these files.
 ```
 
+**契約 TXT のチャンクメタデータ（`article_seq` / `paragraph_seq` 等）を変更したあと**は、既存の Chroma コレクションを捨てて再インデックスしてください（`FORCE_REINDEX_RENTAL_QA=true` など。ローカルなら `data/vector_store` を削除してから起動でも可）。
+
 ---
 
 ## Limitations

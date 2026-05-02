@@ -1,0 +1,133 @@
+# registry.yaml の triggers は各 SKILL.md frontmatter の転写である。
+# 差異が生じた場合は SKILL.md 側を正とする。
+#
+# description は SKILL.md と内容的に矛盾しないこと（完全一致は不要）。
+
+shared:
+  - name: requirements_design_skill
+    path: skills/_shared/requirements_design_skill
+    scope: reusable
+    type: process
+    description: >
+      要件の整理、仕様化、トレーサビリティ、受入条件。FR/NFR、仕様・spec との整合。
+    triggers:
+      - requirement
+      - 要件
+      - 仕様
+      - spec
+      - acceptance
+      - 受入
+      - user story
+      - トレーサビリティ
+
+  - name: architecture_review_skill
+    path: skills/_shared/architecture_review_skill
+    scope: reusable
+    type: meta
+    description: >
+      システム境界、コンポーネント責務、データフロー、失敗モードのレビュー。
+    triggers:
+      - architecture
+      - アーキテクチャ
+      - 設計レビュー
+      - boundary
+      - 境界
+      - data flow
+
+  - name: implementation_plan_skill
+    path: skills/_shared/implementation_plan_skill
+    scope: reusable
+    type: process
+    description: >
+      実装計画の分解・フェーズ境界・検証。agent_prompt / phased_plan テンプレート。
+    triggers:
+      - implementation plan
+      - 実装計画
+      - phased
+      - 段階
+      - rollout
+
+  - name: code_review_skill
+    path: skills/_shared/code_review_skill
+    scope: reusable
+    type: meta
+    description: >
+      diff の妥当性、エッジケース、テスト不足、セキュリティ・PII のレビュー。
+    triggers:
+      - code review
+      - レビュー
+      - PR
+      - diff
+      - refactor
+
+  - name: test_design_skill
+    path: skills/_shared/test_design_skill
+    scope: reusable
+    type: process
+    description: >
+      単体・統合・回帰の切り分けと優先順位。RAG はモックと実インデックスの境界。
+    triggers:
+      - test
+      - テスト
+      - pytest
+      - regression
+      - fixture
+
+rental_rag:
+  - name: tenant_faq_skill
+    path: skills/rental_rag/tenant_faq_skill
+    scope: rental_rag_only
+    type: task
+    description: >
+      入居者 FAQ、KB fast path、clarification、kb_faq 根拠。KB パスは kb_path_reference を参照。
+    triggers:
+      - FAQ
+      - 水道
+      - ガス
+      - ペット
+      - clarification
+      - kb_faq
+
+  - name: contract_qa_skill
+    path: skills/rental_rag/contract_qa_skill
+    scope: rental_rag_only
+    type: task
+    description: >
+      契約書マスタに基づく回答、条番号・出典、contract-source と RAG 経路。
+    triggers:
+      - 契約
+      - 第
+      - 条
+      - 本文
+      - 特約
+      - 別表
+      - contract source
+      - RAG
+
+  - name: eval_review_skill
+    path: skills/rental_rag/eval_review_skill
+    scope: rental_rag_only
+    type: task
+    description: >
+      RAG・ルーティング評価、メトリクス、レポート、品質ゲートとテスト階層のレビュー。
+    triggers:
+      - eval
+      - 評価
+      - KPI
+      - routing
+      - OPIK
+      - 品質ゲート
+
+  - name: forecast_review_skill
+    path: skills/rental_rag/forecast_review_skill
+    scope: rental_rag_only
+    type: meta
+    description: >
+      eval再実行後に予測精度をBrier Scoreで採点し、バイアスを特定する。
+      recall@5改善予測とroute_match率改善予測を対象とする。
+    triggers:
+      - 予測採点
+      - Brier Score
+      - forecast review
+      - 予測精度
+      - eval採点

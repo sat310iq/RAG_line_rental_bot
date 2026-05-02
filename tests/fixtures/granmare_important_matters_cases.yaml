@@ -1,0 +1,132 @@
+contract_document: data/documents/重要事項説明書.txt
+
+eval_defaults:
+  forbidden_keywords:
+    - "管理会社へお問い合わせください"
+    - "管理会社にお問い合わせください"
+    - "公式サイト"
+    - "次アクション"
+    - "この件は管理会社での対応が必要"
+
+cases:
+  - id: juyo_rent
+    group: 重要事項説明書
+    label: "3. 賃料及び賃料以外に授受される金額"
+    question: >-
+      重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。
+    required_keywords:
+      any_of:
+        - ["31,700円", "2,500円", "3,300円"]
+    expected_snippets:
+      - "家賃"
+      - "31,700円"
+      - "2,500円"
+      - "3,300円"
+
+  - id: juyo_contract_term
+    group: 重要事項説明書
+    label: "2. 契約期間及び更新"
+    question: >-
+      重要事項説明書の契約期間はいつからいつまでですか。
+    expected_snippets:
+      - "2026年03月15日"
+      - "2028年03月14日"
+
+  - id: juyo_tokuyaku_04
+    group: 重要事項説明書
+    label: "20. 特約④（短期解約違約金）"
+    question: >-
+      重要事項説明書の特約④では短期解約違約金はどう記載されていますか。
+    required_keywords:
+      any_of:
+        - ["6ヶ月以内", "3ヶ月分"]
+        - ["12ヶ月以内", "2ヶ月分"]
+        - ["24ヶ月以内", "1ヶ月分"]
+    expected_snippets:
+      - "特約④（短期解約違約金）"
+      - "114,600円"
+      - "76,400円"
+      - "38,200円"
+
+  - id: juyo_tokuyaku_02
+    group: 重要事項説明書
+    label: "20. 特約②（振込・口座振替手数料）"
+    question: >-
+      重説の特約②では、振込手数料と口座振替手数料の負担は誰ですか。
+    expected_snippets:
+      - "特約②（振込・口座振替手数料）"
+      - "賃借人の負担"
+
+  - id: juyo_tokuyaku_08
+    group: 重要事項説明書
+    label: "20. 特約⑧（証明書発行等の手数料）"
+    question: >-
+      重要事項説明書の特約⑧で証明書発行手数料と郵送先制限はどう書かれていますか。
+    expected_snippets:
+      - "2,000円(税別)"
+      - "契約者住所に限ります"
+
+  - id: juyo_hazard
+    group: 重要事項説明書
+    label: "12. 水防法ハザードマップ"
+    question: >-
+      重要事項説明書では洪水浸水想定区域と高潮浸水想定区域はどう記載されていますか。
+    expected_snippets:
+      - "洪水浸水想定区域"
+      - "高潮浸水想定区域"
+      - "有"
+
+  - id: juyo_restriction
+    group: 重要事項説明書
+    label: "16. 利用の制限"
+    question: >-
+      重説16では利用の制限として何が禁止されていますか。
+    expected_snippets:
+      - "楽器の使用は禁止"
+      - "ペットの飼育禁止"
+      - "タバコの喫煙禁止"
+
+  - id: juyo_deposit_settlement
+    group: 重要事項説明書
+    label: "17. 敷金の精算"
+    question: >-
+      重要事項説明書17では敷金の相殺禁止と返還時期はどう定めていますか。
+    expected_snippets:
+      - "敷金をもって賃料等その他の債務と相殺することはできません"
+      - "速やかに返還します"
+
+  - id: juyo_touki
+    group: 重要事項説明書
+    label: "1. 登記簿事項"
+    question: >-
+      重要事項説明書の登記簿事項では所有権以外の権利は何と記載されていますか。
+    expected_snippets:
+      - "根抵当権"
+      - "抵当権補足説明"
+
+  - id: juyo_insurance
+    group: 重要事項説明書
+    label: "20. 特約⑨（火災保険）"
+    question: >-
+      重説の特約⑨では火災保険加入についてどのように規定されていますか。
+    expected_snippets:
+      - "借家人賠償及び家財保険付き火災保険"
+      - "必ず加入することとします"
+
+  - id: juyo_internet
+    group: 重要事項説明書
+    label: "20. 特約⑩（インターネット）"
+    question: >-
+      重説の特約⑩では、無料利用と停止時の代替要求禁止をどう記載していますか。
+    expected_snippets:
+      - "インターネットの利用については無料"
+      - "代替サービスの提供及び賃料負担軽減等の要求は一切できない"
+
+  - id: juyo_manager
+    group: 重要事項説明書
+    label: "19. 建物管理の委託先"
+    question: >-
+      重要事項説明書19の建物管理の委託先はどこですか。
+    expected_snippets:
+      - "(株)Toyou"
+      - "0978-68-1588"

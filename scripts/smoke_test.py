@@ -7,27 +7,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import load_config
+from src.metrics import analyze_pii
 from src.tenant_auth import TenantAuth
 from src.vector_store_manager import VectorStoreManager
 from src.query_cache import QueryCache
 from src.rag_answerer import RAGAnswerer
-
-
-def check_pii_leakage(text: str) -> bool:
-    """Check for PII leakage."""
-    import re
-    patterns = [
-        r'\d{1,4}号室',
-        r'0\d{1,4}-\d{1,4}-\d{4}',
-        r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
-        r'\d{4}[-/]\d{1,2}[-/]\d{1,2}',
-    ]
-    
-    for pattern in patterns:
-        if re.search(pattern, text):
-            return True
-    
-    return False
 
 
 def test_question(
@@ -47,38 +31,69 @@ def test_question(
     }
     
     try:
-        answer = rag_answerer.answer(question, tenant_contract_id)
-        
-        # Check structured output format
-        if not hasattr(answer, 'conclusion'):
-            result["errors"].append("Missing 'conclusion' field")
-        if not hasattr(answer, 'evidence'):
+        answer = rag_answerer.answer(question, tenant_contract_id, persist_cache=False)
+
+        # AnswerSchema V2: items, summary, evidence, next_action, caveats
+        if not hasattr(answer, "items") or not answer.items:
+            result["errors"].append("Missing or empty 'items'")
+        if not hasattr(answer, "summary"):
+            result["errors"].append("Missing 'summary' field")
+        if not hasattr(answer, "evidence"):
             result["errors"].append("Missing 'evidence' field")
-        if not hasattr(answer, 'next_action'):
+        if not hasattr(answer, "next_action"):
             result["errors"].append("Missing 'next_action' field")
-        if not hasattr(answer, 'caveats'):
+        if not hasattr(answer, "caveats"):
             result["errors"].append("Missing 'caveats' field")
-        
-        # Check evidence is not empty
-        if not answer.evidence:
+
+        decision_path = getattr(answer, "decision_path", None) or ""
+        if not answer.evidence and decision_path not in ("escalation", "fallback", "clarification"):
             result["errors"].append("Evidence list is empty")
-        
-        # Check PII leakage
-        answer_text = f"{answer.conclusion} {answer.next_action} {answer.caveats}"
-        if check_pii_leakage(answer_text):
-            result["errors"].append("PII leakage detected")
-        
-        # Check references are present
-        if not any('ID' in str(e) or 'id' in str(e).lower() or 'ページ' in str(e) or 'ログ' in str(e) for e in answer.evidence):
+
+        item_texts = " ".join(getattr(i, "text", "") or "" for i in (answer.items or []))
+        answer_text = f"{answer.summary} {item_texts} {answer.next_action} {answer.caveats}"
+        pii = analyze_pii(
+            answer_text,
+            rag_answerer.config.get_rag_official_contact_pattern_list(),
+        )
+        if pii.get("pii_true_leak_suspected"):
+            result["errors"].append(
+                "PII true leak suspected (e.g. room number or personal email in answer)"
+            )
+
+        def _evidence_looks_like_reference(evidence: list) -> bool:
+            for e in evidence:
+                s = str(e)
+                if any(
+                    token in s
+                    for token in (
+                        "ID",
+                        "ページ",
+                        "ログ",
+                        "契約_",
+                        "master",
+                        "pdf",
+                        "stable_id",
+                        ".txt",
+                        "グランマーレ",
+                    )
+                ):
+                    return True
+                if "id" in s.lower():
+                    return True
+            return False
+
+        if answer.evidence and not _evidence_looks_like_reference(answer.evidence):
             result["warnings"] = ["No clear references found in evidence"]
-        
+
         if not result["errors"]:
             result["passed"] = True
-        
+
+        summary_preview = answer.summary[:120] + "..." if len(answer.summary) > 120 else answer.summary
         result["answer"] = {
-            "conclusion": answer.conclusion[:100] + "..." if len(answer.conclusion) > 100 else answer.conclusion,
+            "summary": summary_preview,
             "evidence_count": len(answer.evidence),
             "next_action": answer.next_action[:50] + "..." if len(answer.next_action) > 50 else answer.next_action,
+            "decision_path": decision_path or None,
         }
         
     except Exception as e:
@@ -131,7 +146,7 @@ def main():
             print("Please run 'python scripts/reindex_vector_db.py' first.")
             sys.exit(1)
         
-        print(f"Database ready (FAQ: {counts.get('faq', 0)}, PDF: {counts.get('pdf', 0)}, OPS: {counts.get('ops', 0)})")
+        print(f"Database ready (Deal CSV: {counts.get('deal', 0)}, Master PDF: {counts.get('master', 0)})")
         print()
         
     except Exception as e:
@@ -151,8 +166,10 @@ def main():
         
         if result["passed"]:
             print("  ✓ PASSED")
-            print(f"    Conclusion: {result['answer']['conclusion']}")
+            print(f"    Summary: {result['answer']['summary']}")
             print(f"    Evidence count: {result['answer']['evidence_count']}")
+            if result["answer"].get("decision_path"):
+                print(f"    decision_path: {result['answer']['decision_path']}")
         else:
             print("  ✗ FAILED")
             for error in result["errors"]:

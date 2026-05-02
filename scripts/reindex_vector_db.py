@@ -1,4 +1,4 @@
-"""Reindex all vector stores (3 collections) and save BM25 corpora."""
+"""Reindex all vector stores (2 collections) and save BM25 corpora."""
 
 import json
 import sys
@@ -12,9 +12,9 @@ from langchain_core.documents import Document
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import load_config
-from src.document_loader import load_pdf_documents
-from src.csv_qa_loader import load_ops_log_csv
+from src.document_loader import load_txt_documents
 from src.kb_loader import load_kb_csv
+from src.vector_store_manifest import write_vector_store_manifest
 
 
 def save_bm25_corpus(documents: list[Document], output_path: Path) -> None:
@@ -68,15 +68,14 @@ def reindex_collection(
             embedding_function=embeddings,
             persist_directory=str(persist_directory),
         )
-        # Try to get count - if it fails, collection doesn't exist
         try:
             count = existing_collection._collection.count()
             if count > 0:
                 print(f"Deleting existing collection with {count} documents...")
-                # Delete by recreating with same name (Chroma will overwrite)
-        except:
+                existing_collection.delete_collection()
+        except Exception:
             pass
-    except:
+    except Exception:
         pass
     
     # Create new collection
@@ -127,9 +126,9 @@ def main():
     # Load documents from all sources
     print("Loading documents...")
     
-    # PDF documents
-    pdf_docs = load_pdf_documents(config)
-    print(f"Loaded {len(pdf_docs)} PDF documents")
+    # TXT master documents (PDF-equivalent)
+    txt_docs = load_txt_documents(config)
+    print(f"Loaded {len(txt_docs)} TXT documents")
     
     # Knowledge base CSV (15-column schema)
     try:
@@ -139,51 +138,73 @@ def main():
         print(f"Error loading KB CSV: {e}")
         print("Falling back to legacy FAQ CSV...")
         from src.csv_qa_loader import load_faq_csv
+        legacy_path = config.get_faq_csv_path()
+        if not legacy_path.is_file():
+            print(
+                f"Legacy FAQ CSV not found: {legacy_path}. "
+                "Set FAQ_CSV_PATH to an existing file or fix KB_CSV_PATH.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         kb_docs = load_faq_csv(config)
+        if not kb_docs:
+            print(
+                f"Legacy FAQ CSV loaded 0 documents: {legacy_path}. "
+                "Abort to avoid creating an empty deal index.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         print(f"Loaded {len(kb_docs)} legacy FAQ documents (deprecated)")
     
-    # Operations log CSV (no tenant filtering during indexing)
-    ops_docs = load_ops_log_csv(config, tenant_room=None)
-    print(f"Loaded {len(ops_docs)} operations log documents")
     
     # Reindex each collection
     total_docs = 0
     
-    # KB/FAQ collection (using KB CSV)
-    faq_count = reindex_collection(
-        collection_name="rental_qa_faq",
+    # Deal CSV collection
+    deal_count = reindex_collection(
+        collection_name="kb_deal_csv",
         documents=kb_docs,
         embeddings=embeddings,
         persist_directory=persist_directory,
-        bm25_corpus_path=bm25_dir / "rental_qa_faq.jsonl"
+        bm25_corpus_path=bm25_dir / "kb_deal_csv.jsonl"
     )
-    total_docs += faq_count
+    total_docs += deal_count
     
-    # PDF collection
-    pdf_count = reindex_collection(
-        collection_name="rental_qa_pdf",
-        documents=pdf_docs,
+    # Master PDF collection
+    master_count = reindex_collection(
+        collection_name="kb_master_pdf",
+        documents=txt_docs,
         embeddings=embeddings,
         persist_directory=persist_directory,
-        bm25_corpus_path=bm25_dir / "rental_qa_pdf.jsonl"
+        bm25_corpus_path=bm25_dir / "kb_master_pdf.jsonl"
     )
-    total_docs += pdf_count
-    
-    # Operations log collection
-    ops_count = reindex_collection(
-        collection_name="rental_qa_ops",
-        documents=ops_docs,
-        embeddings=embeddings,
-        persist_directory=persist_directory,
-        bm25_corpus_path=bm25_dir / "rental_qa_ops.jsonl"
-    )
-    total_docs += ops_count
+    total_docs += master_count
     
     print("\n=== Reindexing Complete ===")
     print(f"Total documents indexed: {total_docs}")
-    print(f"  - FAQ: {faq_count}")
-    print(f"  - PDF: {pdf_count}")
-    print(f"  - Operations Log: {ops_count}")
+    print(f"  - Deal CSV: {deal_count}")
+    print(f"  - Master PDF: {master_count}")
+
+    kb_path = config.get_kb_csv_path()
+    if not kb_path.is_file():
+        kb_path = config.get_faq_csv_path()
+    if not kb_path.is_file():
+        print(
+            f"No manifest source CSV found. KB={config.get_kb_csv_path()} "
+            f"legacy={config.get_faq_csv_path()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    manifest = write_vector_store_manifest(
+        vector_store_root=persist_directory,
+        embedding_model=config.openai_embedding_model,
+        kb_csv_path=kb_path,
+        deal_doc_count=deal_count,
+        master_doc_count=master_count,
+        project_root=Path(__file__).resolve().parent.parent,
+    )
+    print(f"\nWrote vector store manifest: {persist_directory / 'manifest.json'}")
+    print(f"  kb_sha256 prefix: {manifest.get('kb_sha256', '')[:16]}...")
 
 
 if __name__ == "__main__":

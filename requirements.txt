@@ -17,10 +17,20 @@ pypdf>=4.0.0
 
 # Environment and configuration
 python-dotenv>=1.0.0
-pydantic>=2.0.0
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
 
 # Utilities
+PyYAML>=6.0.0
 tenacity>=8.0.0
+requests>=2.31.0
+
+# Web API (LINE webhook)
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# GCP (Pub/Sub for LINE events)
+google-cloud-pubsub>=2.18.0
 
 # PII detection (optional, can use regex as fallback)
 # presidio-analyzer>=2.2.0

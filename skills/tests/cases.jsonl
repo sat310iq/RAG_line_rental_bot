@@ -1,0 +1,9 @@
+{"skill": "requirements_design_skill", "input": "ECサイトのカート機能追加", "expect": {"outputs": ["スコープ", "受入条件"], "refs": ["skills/_shared/requirements_design_skill/resources/references.md"]}}
+{"skill": "architecture_review_skill", "input": "UserServiceにDB接続を直接追加したい", "expect": {"outputs": ["コンテキスト図", "読み取り専用パス", "書き込みパス"], "refs": ["skills/_shared/architecture_review_skill/resources/checklist.md"]}}
+{"skill": "implementation_plan_skill", "input": "RAGの回答品質改善をフェーズ分けして実装したい", "expect": {"outputs": ["フェーズ", "完了条件", "検証コマンド"], "refs": ["skills/_shared/implementation_plan_skill/templates/phased_plan.md", "skills/_shared/implementation_plan_skill/templates/agent_prompt.md"]}}
+{"skill": "code_review_skill", "input": "contract_query_routerに新しい分岐を追加したPRをレビューしたい", "expect": {"outputs": ["スコープ確認", "テスト対応確認"], "refs": ["skills/_shared/code_review_skill/resources/checklist.md"]}}
+{"skill": "test_design_skill", "input": "rag_answererのユニットテストを設計したい", "expect": {"outputs": ["assert可能な層", "外部依存方針"], "refs": ["skills/_shared/test_design_skill/resources/pyramid.md"]}}
+{"skill": "tenant_faq_skill", "input": "入居者からの敷金に関するFAQ応答を実装したい", "expect": {"outputs": ["KBパス", "Fast pathとRAGの境界方針"], "refs": ["skills/rental_rag/tenant_faq_skill/resources/kb_path_reference.md"]}}
+{"skill": "contract_qa_skill", "input": "契約書QAの参照元表記を修正したい", "expect": {"outputs": ["入口判定", "回答・出典表示", "設定確認"], "refs": ["skills/rental_rag/contract_qa_skill/resources/module_map.md"]}}
+{"skill": "eval_review_skill", "input": "RAG回答の品質評価を実施したい", "expect": {"outputs": ["品質ゲート確認", "pytest範囲", "運用ログ確認", "eval/runs", "チューニング対象", "implementation_plan_skill"], "refs": ["skills/rental_rag/eval_review_skill/resources/doc_index.md"]}}
+{"skill": "forecast_review_skill", "input": "eval再実行後に予測精度を採点したい", "expect": {"outputs": ["Brier Score", "反証サーチ", "次回予測タスク"], "refs": ["skills/rental_rag/forecast_review_skill/resources/brier_score_guide.md", "docs/eval/forecast_log.md"]}}

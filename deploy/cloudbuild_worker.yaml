@@ -1,0 +1,6 @@
+# Cloud Build config for line-worker (uses deploy/Dockerfile.worker).
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/line-worker', '-f', 'deploy/Dockerfile.worker', '.']
+images:
+  - 'gcr.io/$PROJECT_ID/line-worker'

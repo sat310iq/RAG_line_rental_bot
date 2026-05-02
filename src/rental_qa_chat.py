@@ -1,6 +1,8 @@
 """CLI interface for rental QA chat bot."""
 
 import sys
+import argparse
+import os
 import uuid
 import time
 from typing import Optional
@@ -26,6 +28,11 @@ def main():
     print("=== 賃貸入居者向けQAチャットボット ===")
     print("PoC実装 - 2025標準準拠")
     print()
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--channel", type=str, default=None)
+    args, _ = parser.parse_known_args()
+    channel = args.channel or os.getenv("DEFAULT_CHANNEL", "cli")
     
     # Initialize tenant authentication
     tenant_auth = TenantAuth(config)
@@ -66,6 +73,9 @@ def main():
     try:
         vector_store_manager = VectorStoreManager(config)
         query_cache = QueryCache(config)
+        if "--reset-cache" in sys.argv:
+            query_cache.clear()
+            print("起動時オプションによりキャッシュをクリアしました。")
         rag_answerer = RAGAnswerer(
             config,
             vector_store_manager,
@@ -81,7 +91,7 @@ def main():
             print("先に 'python scripts/reindex_vector_db.py' を実行してください。")
             sys.exit(1)
         
-        print(f"データベース準備完了 (FAQ: {counts.get('faq', 0)}, PDF: {counts.get('pdf', 0)}, OPS: {counts.get('ops', 0)})")
+        print(f"データベース準備完了 (Deal CSV: {counts.get('deal', 0)}, Master PDF: {counts.get('master', 0)})")
         
     except Exception as e:
         print(f"RAGシステムの初期化に失敗しました: {e}", file=sys.stderr)
@@ -91,7 +101,7 @@ def main():
     
     print()
     print("質問を入力してください。終了するには 'exit' または 'quit' と入力してください。")
-    print("特殊コマンド: '/health' - システム状態確認, '/clear' - キャッシュクリア")
+    print("特殊コマンド: '/health' - システム状態確認, '/clear' or '/clear_cache' - キャッシュクリア")
     print()
     
     # Initialize OPIK integration for chat logging (if enabled)
@@ -125,11 +135,11 @@ def main():
                 counts = vector_store_manager.get_collection_counts()
                 cache_size = query_cache.size()
                 print(f"システム状態:")
-                print(f"  - データベース: FAQ={counts.get('faq', 0)}, PDF={counts.get('pdf', 0)}, OPS={counts.get('ops', 0)}")
+                print(f"  - データベース: Deal CSV={counts.get('deal', 0)}, Master PDF={counts.get('master', 0)}")
                 print(f"  - キャッシュ: {cache_size}件")
                 continue
             
-            if question == "/clear":
+            if question in ("/clear", "/clear_cache"):
                 query_cache.clear()
                 print("キャッシュをクリアしました。")
                 continue
@@ -143,25 +153,45 @@ def main():
             try:
                 answer = rag_answerer.answer(question, tenant_contract_id, tenant_info=session_info)
                 
-                # Display structured answer
+                # Display structured answer (V2: use render_answer_text)
+                from src.rag_answerer import render_answer_text
+                is_urgent = "緊急度: high" in (answer.caveats or "")
                 print("\n" + "="*60)
-                print("【結論】")
-                print(answer.conclusion)
+                print("【回答】")
+                if channel == "line":
+                    # LINE: show summary only, hide escalation-related lines
+                    summary = (answer.summary or "").strip()
+                    lines = [line for line in summary.splitlines() if line.strip()]
+                    filtered = []
+                    skip_next = False
+                    for line in lines:
+                        if skip_next:
+                            skip_next = False
+                            continue
+                        if line.startswith("この件は管理会社での対応が必要です。"):
+                            skip_next = True
+                            continue
+                        filtered.append(line)
+                    answer_text = "\n".join(filtered).strip()
+                    if is_urgent and not answer_text.startswith("【緊急・注意】"):
+                        answer_text = f"【緊急・注意】\n{answer_text}"
+                else:
+                    answer_text = render_answer_text(answer)
+                print(answer_text)
                 print()
-                print("【根拠】")
-                for evidence in answer.evidence:
-                    print(f"  - {evidence}")
-                print()
-                print("【次アクション】")
-                print(answer.next_action)
-                print()
-                if answer.caveats:
-                    print("【注意点】")
-                    print(answer.caveats)
+                if channel != "line":
+                    print("【根拠】")
+                    if answer.items:
+                        for idx, item in enumerate(answer.items, 1):
+                            citation = f" ({item.citation})" if item.citation else ""
+                            print(f"{idx}. {item.text}{citation}")
+                    else:
+                        for evidence in answer.evidence:
+                            print(f"  - {evidence}")
                 print("="*60)
                 
                 # エスカレーションデータがあれば表示
-                if hasattr(answer, 'escalation_data') and answer.escalation_data:
+                if channel != "line" and hasattr(answer, 'escalation_data') and answer.escalation_data:
                     import json
                     print("\n" + "="*60)
                     print("【管理会社・オーナー連携用データ】")
@@ -179,7 +209,9 @@ def main():
                             expected_answer=None,
                             rag_answerer=rag_answerer,
                             llm_model=config.openai_model,
-                            tenant_contract_id=tenant_contract_id
+                            tenant_contract_id=tenant_contract_id,
+                            pii_extra_allowlist_patterns=config.get_rag_official_contact_pattern_list(),
+                            semantic_equivalence=None,
                         )
                         
                         # Generate question_id and add session metadata

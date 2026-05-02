@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 QUESTION_TERM_SYNONYMS_RAG_DEFAULT: Dict[str, List[str]] = {
     "浸水": ["水害", "洪水"],
     "抵当権": ["差押", "差押さえ", "競売"],
+    "使用目的": ["居住", "居住のみ", "居住のみを目的として"],
+    "居住": ["使用目的", "住居用途", "住居として"],
 }
 
 
@@ -53,7 +55,7 @@ class Config(BaseSettings):
     )
     rag_rerank_candidates: int = Field(default=20, description="Rerank candidates")
     rag_rerank_top_n: int = Field(
-        default=4,
+        default=5,
         description="Top documents after rerank (slightly wider head for PDF+KB merge)",
     )
     rag_search_timeout_sec: float = Field(default=3.0, description="Search timeout seconds")
@@ -71,6 +73,31 @@ class Config(BaseSettings):
         le=1.0,
         description="PDF threshold used only on KB-empty master retry (answer() second-stage search).",
     )
+    contract_source_pdf_retry_threshold: float = Field(
+        default=0.45,
+        ge=0.0,
+        le=1.0,
+        description="Relaxed PDF score threshold for contract-source master retry when initial master is empty.",
+    )
+    contract_source_master_top_k: int = Field(
+        default=12,
+        ge=1,
+        description="Master top-k used on contract-source path before final rerank truncation.",
+    )
+    contract_source_retry_top_k: int = Field(
+        default=16,
+        ge=1,
+        description="Top-k used inside contract-source master retry semantic rerank.",
+    )
+    contract_source_retry_filter_enabled: bool = Field(
+        default=True,
+        description="If True, apply lightweight pre-merge filter to contract-source retry candidates.",
+    )
+    contract_source_retry_min_keep: int = Field(
+        default=8,
+        ge=1,
+        description="Minimum number of retry candidates to keep after lightweight filtering.",
+    )
     kb_empty_try_master_pdf: bool = Field(
         default=True,
         description="If True and KB path had no deal+master hits, retry hierarchical search with master PDF enabled.",
@@ -78,6 +105,23 @@ class Config(BaseSettings):
     fallback_decision_path: str = Field(
         default="fallback",
         description="decision_path attached when returning fallback_message after retrieval misses.",
+    )
+    enable_individual_contract_handoff: bool = Field(
+        default=True,
+        description=(
+            "If True, questions that look like tenant-specific terms (without clause citation) "
+            "return a short handoff instead of RAG."
+        ),
+    )
+    rag_template_clause_scope_enabled: bool = Field(
+        default=True,
+        description="If True, prompts emphasize template/clause scope (no individual deal determination).",
+    )
+    rag_contract_source_drop_kb_faq_entirely: bool = Field(
+        default=True,
+        description=(
+            "If True, contract-source RAG never uses kb_faq chunks as evidence (not only when PDF exists)."
+        ),
     )
     csv_keyword_override_min_hits: int = Field(
         default=2,
@@ -110,7 +154,7 @@ class Config(BaseSettings):
 
     pdf_documents_dir: str = Field(default="data/documents", description="PDF/TXT documents dir")
     master_txt_files: str = Field(
-        default="グランマーレ大分空港契約書.txt",
+        default="グランマーレ大分空港契約書.txt,重要事項説明書.txt",
         description="Comma-separated TXT master basenames (not JSON — avoids pydantic-settings list decode)",
     )
     faq_csv_path: str = Field(
@@ -224,7 +268,7 @@ class Config(BaseSettings):
     @classmethod
     def _parse_master_txt(cls, v: object) -> object:
         if v is None or v == "":
-            return "グランマーレ大分空港契約書.txt"
+            return "グランマーレ大分空港契約書.txt,重要事項説明書.txt"
         if isinstance(v, list):
             return ",".join(str(item).strip() for item in v if str(item).strip())
         return v
@@ -315,11 +359,12 @@ class Config(BaseSettings):
 
 _config: Optional[Config] = None
 
-# Shared secrets file (sibling assignment repo layout). Override with RENTAL_RAG_SHARED_ENV_FILE.
+# Shared secrets file (sibling assignment repo layout).
+# Default: ../LangGraph/code/.env
+# Optional override: RENTAL_RAG_SHARED_ENV_FILE (process env)
 _SHARED_ENV_RELATIVE = Path("..") / "LangGraph" / "code" / ".env"
 
 _last_env_bootstrap: Dict[str, Any] = {}
-_implicit_shared_warned: bool = False
 
 
 def get_env_bootstrap_meta() -> Dict[str, Any]:
@@ -330,62 +375,45 @@ def get_env_bootstrap_meta() -> Dict[str, Any]:
 def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
     """Load env files in a reproducible order.
 
-    Default: load only this repo's `.env`.
-    Optional shared load:
-    - Explicit: set RENTAL_RAG_SHARED_ENV_FILE=<path>
-    - Implicit sibling (legacy): set RENTAL_RAG_ALLOW_IMPLICIT_SHARED_ENV=true
+    1) Shared .env (default sibling or explicit override) with override=True
+    2) Local .env with override=False
     """
-    global _implicit_shared_warned, _last_env_bootstrap
+    global _last_env_bootstrap
 
     root = project_root or Path(__file__).resolve().parent.parent
-    langgraph_resolved = (root / _SHARED_ENV_RELATIVE).resolve()
+    default_shared = (root / _SHARED_ENV_RELATIVE).resolve()
     meta: Dict[str, Any] = {
         "mode": "bootstrap",
         "project_root": str(root.resolve()),
-        "rental_rag_shared_env_file_var": None,
-        "allow_implicit_shared_env": False,
-        "loaded_override_path": None,
-        "langgraph_candidate": str(langgraph_resolved),
+        "shared_env_override_var": None,
+        "shared_env_default_path": str(default_shared),
+        "shared_env_loaded_path": None,
         "rental_env_path": str((root / ".env").resolve()),
         "rental_env_loaded": False,
         "fallback_load_dotenv_cwd": False,
     }
     shared_override = os.environ.get("RENTAL_RAG_SHARED_ENV_FILE", "").strip()
-    allow_implicit_shared = os.environ.get("RENTAL_RAG_ALLOW_IMPLICIT_SHARED_ENV", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    meta["allow_implicit_shared_env"] = allow_implicit_shared
-
     if shared_override:
-        meta["rental_rag_shared_env_file_var"] = shared_override
-        sp = Path(shared_override).expanduser()
-        if not sp.is_file():
-            raise RuntimeError(
-                f"RENTAL_RAG_SHARED_ENV_FILE is set but file not found: {sp.resolve()}. "
-                "Fix the path or unset the variable."
-            )
-        load_dotenv(sp, override=True)
-        meta["loaded_override_path"] = str(sp.resolve())
-    elif allow_implicit_shared:
-        if langgraph_resolved.is_file():
-            if "RENTAL_RAG_SHARED_ENV_FILE" not in os.environ and not _implicit_shared_warned:
-                logger.warning(
-                    "RENTAL_RAG_ALLOW_IMPLICIT_SHARED_ENV=true; loading sibling shared .env at %s "
-                    "(set RENTAL_RAG_SHARED_ENV_FILE to pin an explicit path).",
-                    langgraph_resolved,
-                )
-                _implicit_shared_warned = True
-            load_dotenv(langgraph_resolved, override=True)
-            meta["loaded_override_path"] = str(langgraph_resolved)
+        meta["shared_env_override_var"] = shared_override
+        shared_path = Path(shared_override).expanduser().resolve()
+    else:
+        shared_path = default_shared
+
+    if shared_path.is_file():
+        load_dotenv(shared_path, override=False)
+        meta["shared_env_loaded_path"] = str(shared_path)
+    elif shared_override:
+        raise RuntimeError(
+            f"RENTAL_RAG_SHARED_ENV_FILE is set but file not found: {shared_path}. "
+            "Fix the path or unset the variable."
+        )
 
     rental_env = root / ".env"
+
     if rental_env.is_file():
         load_dotenv(rental_env, override=False)
         meta["rental_env_loaded"] = True
-    elif not shared_override and not langgraph_resolved.is_file():
+    elif not shared_path.is_file():
         load_dotenv()
         meta["fallback_load_dotenv_cwd"] = True
 
@@ -394,10 +422,9 @@ def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
 
 def reset_config() -> None:
     """Clear cached config (tests / scripts)."""
-    global _config, _last_env_bootstrap, _implicit_shared_warned
+    global _config, _last_env_bootstrap
     _config = None
     _last_env_bootstrap = {}
-    _implicit_shared_warned = False
 
 
 def load_config(env_file: Optional[str] = None, *, force_reload: bool = False) -> Config:

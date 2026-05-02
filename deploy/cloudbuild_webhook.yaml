@@ -1,0 +1,7 @@
+# Cloud Build config for line-webhook (uses deploy/Dockerfile.webhook).
+# Run from project root: gcloud builds submit . --config=deploy/cloudbuild_webhook.yaml --tag=gcr.io/PROJECT_ID/line-webhook
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/line-webhook', '-f', 'deploy/Dockerfile.webhook', '.']
+images:
+  - 'gcr.io/$PROJECT_ID/line-webhook'

@@ -1,0 +1,9 @@
+question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_ids,expected_answer,notes,question_type
+退去時の原状回復の基本方針は？,deal,deal,FAQ001,restoration,原状回復は借主の責任で行う必要があります,smoke: deal CSV,explanation
+契約で禁止されている行為は？,master,master,contract.pdf p5,グランマーレ大分空港契約書.pdf p5,契約で禁止されている行為について説明します,smoke: master / PDF,policy_enumeration
+ペット飼育の可否と条件は？,master,master,contract.pdf p8,ペット飼育の可否,ペットの飼育は禁止されています,smoke: CSV keyword override,policy_confirmation
+原状回復の費用負担と契約条項の関係は？,multi,"deal,master",FAQ002 contract.pdf p12,契約_原状回復 グランマーレ大分空港契約書.pdf p12,原状回復の費用負担と契約条項の関係について説明します,smoke: multi-source,explanation
+不明な質問（存在しない情報について）,edge_case,none,none,,不明な点については管理会社にお問い合わせください,smoke: no-answer / escalation,open_ended
+ゴミ出しのルールは？,deal,deal,FAQ009,ゴミ出し_基本,ゴミ出しのルールについて説明します,smoke: fact lookup,fact_lookup
+室内のリフォームは可能か？,master,master,contract.pdf p7,contract.pdf p7,室内のリフォームについて説明します,smoke: PDF policy,policy_confirmation
+契約更新の手続きは？,multi,"deal,master",FAQ010 contract.pdf p20,renewal,契約更新の手続きについて説明します,smoke: multi procedure,procedure

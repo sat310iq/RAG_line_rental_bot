@@ -6,28 +6,34 @@ import json
 
 
 def test_eval_results_exist():
-    """Test that evaluation results file exists after running eval."""
-    results_path = Path(__file__).parent.parent / "data" / "eval" / "eval_results.json"
-    
-    # This test will pass if results exist, skip if not
+    """Test that evaluation results file exists and meets QUALITY_GATE thresholds."""
+    results_path = Path(__file__).parent.parent / "data" / "eval" / "eval_metrics.json"
+
     if not results_path.exists():
-        pytest.skip("Evaluation results not found. Run 'python scripts/run_eval.py' first.")
-    
-    with open(results_path, 'r', encoding='utf-8') as f:
+        pytest.skip("eval_metrics.json not found. Run 'python scripts/run_simple_eval.py --mode full' first.")
+
+    with open(results_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
-    assert 'aggregate_metrics' in data
-    assert 'results' in data
-    
-    metrics = data['aggregate_metrics']
-    
-    # Check that success rate is above threshold
-    success_rate = metrics.get('success_rate', 0)
-    assert success_rate >= 0.5, f"Success rate {success_rate} is below 0.5"
-    
-    # Check that PII leakage rate is below threshold
-    pii_leakage_rate = metrics.get('pii_leakage_rate', 1.0)
-    assert pii_leakage_rate < 0.1, f"PII leakage rate {pii_leakage_rate} is too high"
+
+    assert "aggregate_metrics" in data, "aggregate_metrics key missing"
+    metrics = data["aggregate_metrics"]
+    assert "total_questions" in metrics, "total_questions key missing"
+
+    # QUALITY_GATE 必須指標（docs/QUALITY_GATE.md と同期）
+    hallucination = metrics.get("avg_hallucination_fact_error", 1.0)
+    assert hallucination == 0.0, (
+        f"hallucination_fact_error {hallucination} must be 0.0 (QUALITY_GATE: block)"
+    )
+
+    recall_at_5 = metrics.get("avg_recall_at_5", 0.0)
+    assert recall_at_5 >= 0.5, (
+        f"avg_recall_at_5 {recall_at_5} is below 0.5 (QUALITY_GATE: target)"
+    )
+
+    id_norm = metrics.get("avg_id_normalization_success_rate", 0.0)
+    assert id_norm >= 0.9, (
+        f"avg_id_normalization_success_rate {id_norm} is below 0.9 (QUALITY_GATE: block)"
+    )
 
 
 def test_eval_questions_exist():

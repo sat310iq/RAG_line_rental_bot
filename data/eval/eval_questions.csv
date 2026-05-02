@@ -1,21 +1,18 @@
-question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_ids,expected_answer,notes
-退去時の原状回復の基本方針は？,faq,faq,FAQ001,restoration,原状回復は借主の責任で行う必要があります,FAQコレクションから回答
-契約で禁止されている行為は？,pdf,pdf,contract.pdf p5,contract.pdf p5,契約で禁止されている行為について説明します,PDFコレクションから回答
-水漏れがあった場合の一次対応は？,ops,ops,LOG001,e07dee1e3fe6fe84,水漏れが発生した場合の一次対応手順を説明します,運用ログから回答（stable_id: 水道設備:洗面台ホース水漏れ）
-原状回復の費用負担と契約条項の関係は？,multi,"faq,pdf",FAQ002 contract.pdf p12,"restoration_cost,contract.pdf p12",原状回復の費用負担と契約条項の関係について説明します,複数ソース統合
-過去の騒音トラブルの対応事例は？,ops,ops,LOG002 LOG003,48016bcd16dcf656,過去の騒音トラブルの対応事例を紹介します,運用ログから複数事例（stable_id: 騒音:早朝の生活音）
-契約期間の延長手続きは？,faq,faq,FAQ003,renewal,契約期間の延長手続きについて説明します,FAQコレクションから回答
-管理費の支払い方法は？,faq,faq,FAQ004,common_fee,管理費の支払い方法について説明します,FAQコレクションから回答
-ペット飼育の可否と条件は？,pdf,pdf,contract.pdf p8,ペット飼育の可否,ペットの飼育は禁止されています,FAQコレクションから回答（intent値を使用）
-鍵の紛失時の対応は？,ops,ops,LOG004,鍵_紛失,鍵の紛失時の対応手順を説明します,FAQコレクションから回答（intent値を使用）
-退去時の立会い検査の流れは？,multi,"faq,ops",FAQ005 LOG005,move_out,退去時の立会い検査の流れについて説明します,FAQと運用ログ統合
-契約解除の条件は？,pdf,pdf,contract.pdf p15,termination,契約解除の条件について説明します,FAQコレクションから回答（intent値を使用）
-駐車場の利用ルールは？,faq,faq,FAQ006,,駐車場の利用ルールについて説明します,FAQコレクションから回答（該当intentなし）
-設備故障時の修理対応は？,multi,"faq,ops",FAQ007 LOG006,equipment_repair,設備故障時の修理対応について説明します,FAQと運用ログ統合
-入居時の初期費用は？,faq,faq,FAQ008,,入居時の初期費用について説明します,FAQコレクションから回答（該当intentなし）
-近隣への配慮事項は？,pdf,pdf,contract.pdf p10,care_duty,近隣への配慮事項について説明します,FAQコレクションから回答（intent値を使用）
-ゴミ出しのルールは？,faq,faq,FAQ009,ゴミ出し_基本,ゴミ出しのルールについて説明します,FAQコレクションから回答
-室内のリフォームは可能か？,pdf,pdf,contract.pdf p7,contract.pdf p7,室内のリフォームについて説明します,PDFコレクションから回答
-過去の火災報知器誤作動の対応は？,ops,ops,LOG007,,過去の火災報知器誤作動の対応事例を紹介します,運用ログから回答（stable_idは実行時に生成）
-契約更新の手続きは？,multi,"faq,pdf",FAQ010 contract.pdf p20,renewal,契約更新の手続きについて説明します,FAQとPDF統合
-不明な質問（存在しない情報について）,edge_case,none,none,,不明な点については管理会社にお問い合わせください,エッジケース - 不明な質問
+question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_ids,expected_answer,notes,question_type
+退去時の原状回復の基本方針は？,deal,deal,契約_原状回復,restoration,原状回復は借主の責任で行う必要があります,Deal CSVから回答,explanation
+原状回復の費用負担と契約条項の関係は？,multi,"deal,master",FAQ002 contract.pdf p12,契約_原状回復 グランマーレ大分空港契約書.pdf p12,原状回復の費用負担と契約条項の関係について説明します,複数ソース統合,explanation
+ペット飼育の可否と条件は？,master,master,contract.pdf p8,ペット飼育の可否,ペットの飼育は禁止されています,Deal CSVから回答（intent値を使用）,policy_confirmation
+鍵の紛失時の対応は？,deal,deal,鍵_紛失,鍵_紛失,鍵の紛失時の対応手順を説明します,Deal CSVから回答（intent値を使用）,procedure
+駐車場の利用ルールは？,deal,deal,駐車場_利用,parking,契約書に基づき指定された駐車場1台分を使用する旨と、詳細は管理会社に確認することを回答内容として含む,FAQ KB（駐車場_利用）,fact_lookup
+設備故障時の修理対応は？,deal,deal,設備_故障,equipment_repair,設備故障時の修理対応について説明します,Deal CSVから回答,procedure
+ゴミ出しのルールは？,deal,deal,ゴミ出し_ルール,ゴミ出し_基本,ゴミ出しのルールについて説明します,Deal CSVから回答,fact_lookup
+インターネット接続の連絡先,deal,deal,生活_インターネット,internet_contact,J:COMカスタマーセンター（097-542-1121）への連絡を案内する,FAQ KB,fact_lookup
+水道費用についての連絡先,deal,deal,生活_水道請求,water_bill_contact,水道料金の請求・明細は管理会社（株式会社To You）へ問い合わせる旨を案内する,FAQ KB,fact_lookup
+水漏れが発生した時の対応について,deal,deal,設備_水漏れ,water_leak_response,至急管理会社に連絡し、管理会社の連絡先（TEL等）を案内したうえで状況・写真を伝えることと業者手配を案内する,FAQ KB,procedure
+火災報知器が鳴った時の対応について,deal,deal,設備_火災警報,fire_alarm_response,安全確保・必要に応じ119・管理会社連絡を案内する,FAQ KB,procedure
+不審者を見た時の対応について,deal,deal,防犯_不審者,suspicious_person,110番・管理会社連絡を案内する,FAQ KB,procedure
+近隣の騒音などの迷惑行為の対応について,deal,deal,生活_騒音,noise_neighbor,管理会社の連絡先（株式会社To You・TEL）を明示し、状況を伝える旨を案内する,FAQ KB,procedure
+電気料金や契約の連絡先について,deal,deal,生活_電気,electricity_contact,九州電力別府営業所への問い合わせを案内する,FAQ KB,fact_lookup
+退去、契約の解約について,deal,deal,契約_退去解約,moveout_cancel,書面またはオンラインでの解約申請・退去通知の手続きを案内する,FAQ KB,procedure
+車庫証明書などの証明書発行について,deal,deal,契約_証明書,certificate_issue,管理会社に所定の用紙を送付または持参で手続きする旨を案内する,FAQ KB,procedure
+玄関や共有廊下の電灯や自動ドアの不具合について,deal,deal,設備_共用部照明,shared_entrance_lighting,管理会社の連絡先（株式会社To You・TEL）を明示し、共用部の照明・電灯・自動ドアの不具合は管理会社へ連絡する旨を案内する,FAQ KB,procedure

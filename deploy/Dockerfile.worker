@@ -1,0 +1,18 @@
+# Worker: Pub/Sub Push -> Slack only. No RAG. Lightweight.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+WORKDIR /app
+
+# Minimal deps: FastAPI, uvicorn, requests (slack client). No langchain/chroma.
+RUN pip install --no-cache-dir "fastapi>=0.110.0" "uvicorn>=0.27.0" "requests>=2.31.0"
+
+# Worker + Slack formatter/client only (no config.py needed; uses os.getenv).
+COPY src/interfaces/slack/ ./src/interfaces/slack/
+COPY src/interfaces/pubsub/ ./src/interfaces/pubsub/
+COPY src/__init__.py ./src/
+COPY src/interfaces/__init__.py ./src/interfaces/
+
+EXPOSE 8080
+CMD uvicorn src.interfaces.pubsub.worker_main:app --host 0.0.0.0 --port ${PORT}
