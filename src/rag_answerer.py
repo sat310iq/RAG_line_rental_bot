@@ -1332,6 +1332,40 @@ class RAGAnswerer:
             object.__setattr__(answer, "contract_source_q", contract_source_q)
             return answer
 
+        # Contract navigation guard: 「契約書のどこに書いてありますか？」系の曖昧質問を
+        # clarificationに振る（contract_source_q=True でも KB clarification が効かない問題の回避）。
+        _CONTRACT_NAV_PATTERNS = (
+            "どこに書いてある",
+            "どこに書いてあります",
+            "何条",
+            "条項番号",
+            "どこを見れば",
+            "何ページ",
+        )
+        if any(p in question for p in _CONTRACT_NAV_PATTERNS):
+            _nav_msg = (
+                "何についての条項をお探しですか？"
+                "例：解約・原状回復・ペット飼育・短期違約金・鍵の紛失など、"
+                "具体的に教えていただくと該当箇所をご案内できます。"
+            )
+            answer = AnswerSchema(
+                items=[AnswerItem(text=_nav_msg, citation="contract_navigation")],
+                summary=_nav_msg,
+                evidence=[],
+                next_action="具体的な内容をお聞かせください。",
+                caveats="",
+            )
+            self._attach_decision_meta(
+                answer,
+                system=decision["system"],
+                decision_path="clarification",
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                retrieval_used=False,
+            )
+            self._persist_to_cache(cache_key, answer, persist_cache)
+            object.__setattr__(answer, "contract_source_q", contract_source_q)
+            return answer
+
         # Clarification-first guard for ambiguous topic queries (keep behavior consistent across kb_only/rag).
         try:
             kb_docs = load_kb_documents_for_fast_path(self.config)
