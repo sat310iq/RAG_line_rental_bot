@@ -73,6 +73,23 @@ shared:
       - regression
       - fixture
 
+  - name: legal_terms_skill
+    path: skills/_shared/legal_terms_skill
+    scope: reusable
+    type: process
+    description: >
+      賃貸契約・重要事項説明書の法律用語辞書の管理・更新・横展開。
+      用語追加・修正・TXTからの自動抽出・他PoC展開の手順を提供する。
+      辞書本体: data/legal_terms_dict.yaml
+      実装本体: src/legal_term_resolver.py
+    triggers:
+      - 法律用語
+      - 辞書更新
+      - legal terms
+      - term extraction
+      - 用語追加
+      - 辞書横展開
+
 rental_rag:
   - name: tenant_faq_skill
     path: skills/rental_rag/tenant_faq_skill
@@ -131,3 +148,19 @@ rental_rag:
       - forecast review
       - 予測精度
       - eval採点
+
+  - name: contract_summary_policy_skill
+    path: skills/rental_rag/contract_summary_policy_skill
+    scope: rental_rag_only
+    type: meta
+    description: >
+      契約書・重要事項説明書のAI要約における運用ポリシー。
+      許可・禁止事項の定義、弁護士法72条への適合、免責表示の管理を行う。
+      contract_source_qa_promptの変更・レビュー時に必ず参照する。
+    triggers:
+      - 契約書要約
+      - 条項説明
+      - 免責表示
+      - 非弁
+      - contract summary
+      - policy
