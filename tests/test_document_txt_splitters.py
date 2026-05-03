@@ -36,7 +36,7 @@ def test_retrieval_boost_article_order() -> None:
     d17 = Document(
         page_content="第17条本文",
         metadata={
-            "type": "pdf",
+            "type": "master_txt",
             "filename": "契約.txt",
             "doc_kind": "contract",
             "article_number": "第17条（原状回復義務等）",
@@ -46,7 +46,7 @@ def test_retrieval_boost_article_order() -> None:
     d4 = Document(
         page_content="第4条",
         metadata={
-            "type": "pdf",
+            "type": "master_txt",
             "filename": "契約.txt",
             "doc_kind": "contract",
             "article_number": "第4条（賃料）",

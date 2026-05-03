@@ -146,7 +146,7 @@ def main():
             print("Please run 'python scripts/reindex_vector_db.py' first.")
             sys.exit(1)
         
-        print(f"Database ready (Deal CSV: {counts.get('deal', 0)}, Master PDF: {counts.get('master', 0)})")
+        print(f"Database ready (Deal CSV: {counts.get('deal', 0)}, Master TXT: {counts.get('master', 0)})")
         print()
         
     except Exception as e:

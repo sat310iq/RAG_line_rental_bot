@@ -1,4 +1,4 @@
-"""B2 contract RAG display: PDF template, not low-relevance path."""
+"""B2 contract RAG display: master TXT citations, not low-relevance path."""
 
 from langchain_core.documents import Document
 
@@ -13,11 +13,12 @@ from src.contract_rag_format import (
     build_source_reference_line,
     format_b2_contract_rag_display,
     uses_master_pdf_docs,
+    uses_master_source_docs,
 )
 
 
 def _pdf_doc(
-    filename: str = "master.pdf",
+    filename: str = "グランマーレ大分空港契約書.txt",
     page: int = 3,
     *,
     article_seq: int | None = 10,
@@ -27,7 +28,7 @@ def _pdf_doc(
     doc_kind: str | None = "contract",
 ) -> Document:
     meta: dict = {
-        "type": "pdf",
+        "type": "master_txt",
         "filename": filename,
         "page": page,
         "doc_kind": doc_kind,
@@ -54,14 +55,19 @@ def test_uses_master_pdf_docs_true_when_pdf():
     assert uses_master_pdf_docs([_kb_faq_doc(), _pdf_doc()]) is True
 
 
+def test_uses_master_source_docs_true_legacy_pdf_type():
+    legacy = Document(page_content="x", metadata={"type": "pdf", "filename": "legacy.pdf"})
+    assert uses_master_source_docs([legacy]) is True
+
+
 def test_uses_master_pdf_docs_false_kb_only():
     assert uses_master_pdf_docs([_kb_faq_doc()]) is False
     assert uses_master_pdf_docs([]) is False
 
 
 def test_build_source_reference_includes_filename_and_page():
-    ref = build_source_reference([_pdf_doc("基本契約.pdf", page=2, article_seq=8)])
-    assert "基本契約.pdf" in ref
+    ref = build_source_reference([_pdf_doc("基本契約.txt", page=2, article_seq=8)])
+    assert "基本契約.txt" in ref
     assert "p.2" in ref
     assert "第8条" in ref
 
@@ -69,7 +75,7 @@ def test_build_source_reference_includes_filename_and_page():
 def test_build_source_reference_article_paragraph_when_confident():
     ref = build_source_reference_line(
         _pdf_doc(
-            "基本契約.pdf",
+            "基本契約.txt",
             page=1,
             article_seq=4,
             paragraph_seq=2,
@@ -82,7 +88,7 @@ def test_build_source_reference_article_paragraph_when_confident():
 def test_build_source_reference_no_fake_article_from_preamble_label():
     ref = build_source_reference_line(
         {
-            "type": "pdf",
+            "type": "master_txt",
             "filename": "契約.txt",
             "page": 2,
             "doc_kind": "contract",
@@ -98,8 +104,8 @@ def test_build_source_reference_no_fake_article_from_preamble_label():
 def test_build_source_reference_legacy_article_number_string():
     ref = build_source_reference_line(
         {
-            "type": "pdf",
-            "filename": "旧PDF.pdf",
+            "type": "master_txt",
+            "filename": "旧契約.txt",
             "page": 3,
             "doc_kind": "contract",
             "article_seq": None,
@@ -113,7 +119,7 @@ def test_build_source_reference_important_matters_section():
     d = Document(
         page_content="表…",
         metadata={
-            "type": "pdf",
+            "type": "master_txt",
             "filename": "重要事項説明書.txt",
             "doc_kind": "important_matters",
             "section_id": "12",

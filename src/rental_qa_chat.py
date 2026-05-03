@@ -91,7 +91,7 @@ def main():
             print("先に 'python scripts/reindex_vector_db.py' を実行してください。")
             sys.exit(1)
         
-        print(f"データベース準備完了 (Deal CSV: {counts.get('deal', 0)}, Master PDF: {counts.get('master', 0)})")
+        print(f"データベース準備完了 (Deal CSV: {counts.get('deal', 0)}, Master TXT: {counts.get('master', 0)})")
         
     except Exception as e:
         print(f"RAGシステムの初期化に失敗しました: {e}", file=sys.stderr)

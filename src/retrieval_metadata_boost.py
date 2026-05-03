@@ -1,4 +1,4 @@
-"""Deterministic ordering for master (PDF/TXT) chunks: article/section match, then doc_kind."""
+"""Deterministic ordering for master TXT chunks: article/section match, then doc_kind."""
 
 from __future__ import annotations
 

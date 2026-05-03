@@ -59,7 +59,7 @@ class Config(BaseSettings):
     rag_rerank_candidates: int = Field(default=20, description="Rerank candidates")
     rag_rerank_top_n: int = Field(
         default=5,
-        description="Top documents after rerank (slightly wider head for PDF+KB merge)",
+        description="Top documents after rerank (slightly wider head for master TXT+KB merge)",
     )
     rag_search_timeout_sec: float = Field(default=3.0, description="Search timeout seconds")
     csv_score_threshold: float = Field(
@@ -68,19 +68,19 @@ class Config(BaseSettings):
     )
     pdf_score_threshold: float = Field(
         default=0.58,
-        description="PDF match threshold (slightly relaxed vs 0.60 for recall; override path guarded elsewhere)",
+        description="Master TXT chunk score threshold (legacy env name pdf_score_threshold; same pipeline)",
     )
     pdf_empty_retry_score_threshold: float = Field(
         default=0.52,
         ge=0.0,
         le=1.0,
-        description="PDF threshold used only on KB-empty master retry (answer() second-stage search).",
+        description="Master TXT threshold used only on KB-empty master retry (answer() second-stage search).",
     )
     contract_source_pdf_retry_threshold: float = Field(
         default=0.45,
         ge=0.0,
         le=1.0,
-        description="Relaxed PDF score threshold for contract-source master retry when initial master is empty.",
+        description="Relaxed master TXT score threshold for contract-source retry when initial master is empty.",
     )
     contract_source_master_top_k: int = Field(
         default=12,
@@ -103,7 +103,7 @@ class Config(BaseSettings):
     )
     kb_empty_try_master_pdf: bool = Field(
         default=True,
-        description="If True and KB path had no deal+master hits, retry hierarchical search with master PDF enabled.",
+        description="If True and KB path had no deal+master hits, retry hierarchical search with master TXT enabled.",
     )
     fallback_decision_path: str = Field(
         default="fallback",
@@ -123,7 +123,7 @@ class Config(BaseSettings):
     rag_contract_source_drop_kb_faq_entirely: bool = Field(
         default=True,
         description=(
-            "If True, contract-source RAG never uses kb_faq chunks as evidence (not only when PDF exists)."
+            "If True, contract-source RAG never uses kb_faq chunks as evidence (not only when master TXT exists)."
         ),
     )
     csv_keyword_override_min_hits: int = Field(
@@ -155,7 +155,10 @@ class Config(BaseSettings):
         description="Plain text when responder rejects weak KB–question alignment.",
     )
 
-    pdf_documents_dir: str = Field(default="data/documents", description="PDF/TXT documents dir")
+    pdf_documents_dir: str = Field(
+        default="data/documents",
+        description="Master TXT sources directory (legacy env name pdf_documents_dir)",
+    )
     master_txt_files: str = Field(
         default="グランマーレ大分空港契約書.txt,重要事項説明書.txt",
         description="Comma-separated TXT master basenames (not JSON — avoids pydantic-settings list decode)",

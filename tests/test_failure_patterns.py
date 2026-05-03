@@ -21,7 +21,48 @@ from src.metrics import (
     semantic_neighbor_hit,
 )
 from src.eval_smoke_analysis import hits_at_k, infer_failure_bucket
+from langchain_core.documents import Document
+
+from src.config import load_config
 from src.rag_answerer import RAGAnswerer
+
+
+def test_csv_keyword_override_mid_term_kaiyaku_uses_kaiyaku_token_flow() -> None:
+    """中途解約は解約キーワード行と同じオーバーライド扱い（KB に専用トークンを増やさない）。"""
+    rag = RAGAnswerer.__new__(RAGAnswerer)
+    rag.config = load_config()
+    min_h = int(rag.config.csv_keyword_override_min_hits or 2)
+    doc = Document(
+        page_content="x",
+        metadata={
+            "keywords": "解約|退去|退去届",
+            "keywords_primary": "退去|解約|解約したい",
+        },
+    )
+    q = "中途解約について知りたいです"
+    assert RAGAnswerer._csv_keyword_override_hit_count(rag, q, doc) >= min_h
+    assert RAGAnswerer._csv_keyword_override_hit_count(rag, "途中解約の手続き", doc) >= min_h
+    other = Document(page_content="x", metadata={"keywords": "ペット|禁止", "keywords_primary": ""})
+    assert RAGAnswerer._csv_keyword_override_hit_count(rag, q, other) < min_h
+
+
+def test_csv_keyword_override_tai_kyo_shitai_spaced_matches_tai_kyo_flow() -> None:
+    """「退去 したい」は連続せずトークン数が 1 になりうるが、退去キーワード行は同一フローで min_hits に届く。"""
+    rag = RAGAnswerer.__new__(RAGAnswerer)
+    rag.config = load_config()
+    min_h = int(rag.config.csv_keyword_override_min_hits or 2)
+    doc = Document(
+        page_content="x",
+        metadata={
+            "keywords": "解約|退去|退去届",
+            "keywords_primary": "退去|解約|退去したい",
+        },
+    )
+    spaced = "退去 したいのですが"
+    assert RAGAnswerer._csv_keyword_override_hit_count(rag, spaced, doc) >= min_h
+    assert RAGAnswerer._csv_keyword_override_hit_count(rag, "退去希望です", doc) >= min_h
+    other = Document(page_content="x", metadata={"keywords": "ペット|禁止", "keywords_primary": ""})
+    assert RAGAnswerer._csv_keyword_override_hit_count(rag, spaced, other) < min_h
 
 
 def test_match_tier_code_table_matches_metrics() -> None:

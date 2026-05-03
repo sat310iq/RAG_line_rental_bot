@@ -93,7 +93,7 @@ def _pdf_doc(article_seq: int, *, stable_id: str) -> Document:
     return Document(
         page_content=f"第{article_seq}条の本文です。居住のみを目的として使用する旨を定めます。",
         metadata={
-            "type": "pdf",
+            "type": "master_txt",
             "filename": "グランマーレ大分空港契約書.txt",
             "page": article_seq,
             "article_seq": article_seq,
@@ -103,7 +103,7 @@ def _pdf_doc(article_seq: int, *, stable_id: str) -> Document:
     )
 
 
-def test_answer_uses_contract_prompt_when_pdf_docs_present(monkeypatch: pytest.MonkeyPatch):
+def test_answer_uses_contract_prompt_when_master_txt_docs_present(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "src.question_typing.QuestionTyper.classify",
         lambda self, question: "fact_lookup",
@@ -112,7 +112,7 @@ def test_answer_uses_contract_prompt_when_pdf_docs_present(monkeypatch: pytest.M
         [
             Document(
                 page_content="契約条項の抜粋。解約予告期間に関する条件が記載されています。" * 3,
-                metadata={"type": "pdf", "filename": "master.pdf", "page": 5},
+                metadata={"type": "master_txt", "filename": "グランマーレ大分空港契約書.txt", "page": 5},
             )
         ]
     )
@@ -123,7 +123,7 @@ def test_answer_uses_contract_prompt_when_pdf_docs_present(monkeypatch: pytest.M
     assert answer.next_action
 
 
-def test_answer_uses_default_prompt_when_non_pdf_docs(monkeypatch: pytest.MonkeyPatch):
+def test_answer_uses_default_prompt_when_non_master_docs(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "src.question_typing.QuestionTyper.classify",
         lambda self, question: "fact_lookup",
@@ -153,7 +153,7 @@ def test_answer_uses_contract_source_qa_prompt_for_article_question(
         [
             Document(
                 page_content="第4条（賃料）の本文抜粋。頭書(3)の記載に従い日割り計算する旨が記載されています。" * 3,
-                metadata={"type": "pdf", "filename": "master.pdf", "page": 4},
+                metadata={"type": "master_txt", "filename": "グランマーレ大分空港契約書.txt", "page": 4},
             )
         ]
     )

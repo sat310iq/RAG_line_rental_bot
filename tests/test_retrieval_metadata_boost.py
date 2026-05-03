@@ -7,7 +7,7 @@ def _doc(article: int, *, article_number: str | None = None, content: str | None
     return Document(
         page_content=content or f"第{article}条の抜粋",
         metadata={
-            "type": "pdf",
+            "type": "master_txt",
             "doc_kind": "contract",
             "article_seq": article,
             "article_number": article_number or f"第{article}条",
