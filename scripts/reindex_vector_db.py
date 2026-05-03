@@ -126,7 +126,7 @@ def main():
     # Load documents from all sources
     print("Loading documents...")
     
-    # TXT master documents (PDF-equivalent)
+    # Master corpus from TXT only (no PDF ingestion)
     txt_docs = load_txt_documents(config)
     print(f"Loaded {len(txt_docs)} TXT documents")
     
@@ -170,7 +170,7 @@ def main():
     )
     total_docs += deal_count
     
-    # Master PDF collection
+    # Master collection (TXT chunks; Chroma name kb_master_pdf is historical)
     master_count = reindex_collection(
         collection_name="kb_master_pdf",
         documents=txt_docs,
@@ -183,7 +183,7 @@ def main():
     print("\n=== Reindexing Complete ===")
     print(f"Total documents indexed: {total_docs}")
     print(f"  - Deal CSV: {deal_count}")
-    print(f"  - Master PDF: {master_count}")
+    print(f"  - Master TXT: {master_count}")
 
     kb_path = config.get_kb_csv_path()
     if not kb_path.is_file():

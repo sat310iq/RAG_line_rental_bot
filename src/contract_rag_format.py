@@ -1,10 +1,21 @@
-"""B2: Master PDF / contract RAG display formatting (non-judgmental, template)."""
+"""B2: Master contract documents (TXT chunks in vector index) — display formatting (non-judgmental)."""
 
 from __future__ import annotations
 
 from typing import Any, List, Set
 
 from src.citation_metadata import extract_article_seq_from_legacy_article_number
+
+# Indexed master chunks: current TXT pipeline uses ``master_txt``; legacy indexes used ``pdf``.
+MASTER_CHUNK_TYPES: frozenset[str] = frozenset({"master_txt", "pdf"})
+
+
+def is_master_chunk_metadata(metadata: Any) -> bool:
+    """True for metadata rows produced from master TXT (or legacy pdf-tagged) chunks."""
+    if not isinstance(metadata, dict):
+        return False
+    return metadata.get("type") in MASTER_CHUNK_TYPES
+
 
 # Section headings for LINE / CLI / eval (single place for i18n later)
 B2_HEADING_SOURCE = "【該当箇所】"
@@ -24,20 +35,23 @@ B2_FIXED_NEXT = (
 DISPLAY_FORMAT_B2 = "b2_contract_rag"
 
 
-def uses_master_pdf_docs(docs: List[Any]) -> bool:
-    """Return True if docs contain at least one master PDF (contract) chunk."""
+def uses_master_source_docs(docs: List[Any]) -> bool:
+    """Return True if docs contain at least one master corpus chunk (TXT-indexed contract / 重説)."""
     if not docs:
         return False
     for d in docs:
         meta = getattr(d, "metadata", None) or {}
-        if isinstance(meta, dict) and meta.get("type") == "pdf":
+        if is_master_chunk_metadata(meta):
             return True
     return False
 
 
+uses_master_pdf_docs = uses_master_source_docs  # backward-compatible alias
+
+
 def build_source_reference_line(metadata: dict) -> str:
     """Single-line citation from one document's metadata (filename + 条/項/§/cite_label)."""
-    if not isinstance(metadata, dict) or metadata.get("type") != "pdf":
+    if not isinstance(metadata, dict) or not is_master_chunk_metadata(metadata):
         return ""
 
     name = (metadata.get("filename") or "").strip() or (metadata.get("source") or "").strip()
@@ -97,7 +111,7 @@ def build_source_reference(docs: List[Any]) -> str:
 
     for d in docs:
         meta = getattr(d, "metadata", None) or {}
-        if not isinstance(meta, dict) or meta.get("type") != "pdf":
+        if not is_master_chunk_metadata(meta):
             continue
         line = build_source_reference_line(meta)
         if line and line not in seen_lines:

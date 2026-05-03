@@ -78,7 +78,7 @@ def split_contract_txt_to_documents(
                 Document(
                     page_content=chunk,
                     metadata={
-                        "type": "pdf",
+                        "type": "master_txt",
                         "source": str(txt_path),
                         "filename": txt_path.name,
                         "doc_id": txt_path.stem,
@@ -130,7 +130,7 @@ def split_important_matters_txt_to_documents(
                 Document(
                     page_content=chunk,
                     metadata={
-                        "type": "pdf",
+                        "type": "master_txt",
                         "source": str(txt_path),
                         "filename": txt_path.name,
                         "doc_id": txt_path.stem,
@@ -170,7 +170,7 @@ def split_generic_txt_to_documents(
             Document(
                 page_content=chunk,
                 metadata={
-                    "type": "pdf",
+                    "type": "master_txt",
                     "source": str(txt_path),
                     "filename": txt_path.name,
                     "doc_id": txt_path.stem,

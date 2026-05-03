@@ -1,16 +1,11 @@
-"""PDF document loader with security measures."""
+"""Master document loaders: TXT sources for the vector index (PDF ingestion disabled)."""
 
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from src.config import Config
-from src.topic_classifier import classify_topic
 from src.citation_metadata import (
-    chunk_paragraph_assignment,
-    paragraph_boundaries_in_article_body,
     parse_article_seq_from_heading_line,
     split_preliminary_sections,
 )
@@ -145,129 +140,12 @@ def _split_by_article(
 
 
 def load_pdf_documents(config: Config) -> List[Document]:
-    """Load all PDF documents from the configured directory.
-    
-    Args:
-        config: Application configuration
-        
-    Returns:
-        List of Document objects with metadata
-    """
-    pdf_dir = config.get_pdf_documents_dir()
-    
-    if not pdf_dir.exists():
-        pdf_dir.mkdir(parents=True, exist_ok=True)
-        return []
-    
-    documents = []
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        separators=['\n\n', '\n', '。', '．', '；', ';', '、', ' ', '']
-    )
-    
-    pdf_files = list(pdf_dir.glob("*.pdf"))
-    if not pdf_files:
-        return documents
-    
-    for pdf_path in pdf_files:
-        try:
-            loader = PyPDFLoader(str(pdf_path))
-            pages = loader.load()
-            
-            # Combine all pages
-            combined_text = "\n".join([page.page_content for page in pages])
-            
-            # Sanitize text
-            sanitized_text = _sanitize_text(combined_text)
-            
-            # Detect suspicious patterns
-            suspicious = _detect_suspicious_patterns(sanitized_text)
-            if suspicious:
-                print(f"Warning: Suspicious patterns detected in {pdf_path.name}: {suspicious}")
-                # Continue processing but log the warning
-            
-            # Split by article headings when possible
-            article_sections = _split_by_article(sanitized_text, loose=True)
-            if article_sections:
-                for _heading, article_text, sec_meta in article_sections:
-                    topic = classify_topic(article_text)
-                    art_seq = sec_meta.get("article_seq")
-                    art_num = f"第{art_seq}条" if art_seq is not None else None
-                    sub_chunks = text_splitter.split_text(article_text)
-                    search_from = 0
-                    for sub_idx, chunk in enumerate(sub_chunks, start=1):
-                        pos = article_text.find(chunk, search_from)
-                        if pos < 0:
-                            pos = article_text.find(chunk)
-                        search_from = max(search_from, pos + 1)
-                        pseq, pconf = (None, "unknown")
-                        if art_seq is not None:
-                            bounds = paragraph_boundaries_in_article_body(article_text)
-                            pseq, pconf = chunk_paragraph_assignment(
-                                pos, pos + len(chunk), bounds
-                            )
-                        cite_label = sec_meta.get("cite_label") or ""
-                        if art_seq is not None and pseq is not None and pconf in (
-                            "high",
-                            "inferred",
-                        ):
-                            cite_label = f"第{art_seq}条第{pseq}項"
-                        elif art_seq is not None:
-                            cite_label = f"第{art_seq}条"
-                        doc = Document(
-                            page_content=chunk,
-                            metadata={
-                                "type": "pdf",
-                                "source": str(pdf_path),
-                                "filename": pdf_path.name,
-                                "doc_id": pdf_path.stem,
-                                "article_number": art_num,
-                                "article_seq": art_seq,
-                                "paragraph_seq": pseq,
-                                "paragraph_seq_confidence": pconf,
-                                "cite_kind": sec_meta.get("cite_kind"),
-                                "cite_label": cite_label or sec_meta.get("cite_label"),
-                                "doc_kind": "contract",
-                                "topic": topic,
-                                "page": sub_idx,
-                                "total_pages": len(sub_chunks),
-                                "effective_date": None,
-                                "version": None,
-                            },
-                        )
-                        documents.append(doc)
-            else:
-                # Fallback: split into chunks without article headings
-                chunks = text_splitter.split_text(sanitized_text)
-                for idx, chunk in enumerate(chunks):
-                    topic = classify_topic(chunk)
-                    doc = Document(
-                        page_content=chunk,
-                        metadata={
-                            'type': 'pdf',
-                            'source': str(pdf_path),
-                            'filename': pdf_path.name,
-                            'doc_id': pdf_path.stem,
-                            'article_number': None,
-                            'topic': topic,
-                            'page': idx + 1,
-                            'total_pages': len(chunks),
-                            'effective_date': None,
-                            'version': None,
-                        }
-                    )
-                    documents.append(doc)
-                
-        except Exception as e:
-            print(f"Error loading PDF {pdf_path.name}: {e}")
-            # Continue with other PDFs
-    
-    return documents
+    """PDF ingestion is disabled; use ``load_txt_documents`` for the master corpus."""
+    return []
 
 
 def load_txt_documents(config: Config) -> List[Document]:
-    """Load master TXT documents as PDF-equivalent sources.
+    """Load master TXT documents into the same schema as indexed master chunks.
 
     Args:
         config: Application configuration
