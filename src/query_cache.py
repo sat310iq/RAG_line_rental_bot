@@ -18,6 +18,7 @@ _shared_st_model: Any = None
 _shared_st_lock = threading.Lock()
 _shared_st_failed = False
 _cache_embed_skip_logged = False
+_semantic_get_skip_logged = False
 
 
 def _get_shared_sentence_transformer() -> Optional[Any]:
@@ -213,31 +214,42 @@ class QueryCache:
         threshold = similarity_threshold if similarity_threshold is not None else self.semantic_threshold
         if not self._cache:
             return None
-        if self._get_similarity_model():
-            query_embedding = self._embed_query(query)
-            if query_embedding is not None:
-                best_match: Optional[CacheEntry] = None
-                best_similarity = 0.0
+        # Never trigger SentenceTransformer download from GET. First load can take 60s+
+        # (Hugging Face) and blocks RAG + LINE Reply API (~30s token lifetime).
+        # Same policy as _embed_query_if_loaded on SET: semantic hit only if singleton
+        # already loaded (optional warmup at startup may populate it).
+        global _shared_st_model, _semantic_get_skip_logged
+        if _shared_st_model is None:
+            if not _semantic_get_skip_logged:
+                logger.info(
+                    "cache_get_semantic_skipped: similarity model not loaded (no HF pull on request path)"
+                )
+                _semantic_get_skip_logged = True
+            return None
+        query_embedding = self._embed_query_if_loaded(query)
+        if query_embedding is not None:
+            best_match: Optional[CacheEntry] = None
+            best_similarity = 0.0
 
-                for entry in self._cache.values():
-                    if entry.version != self._cache_version:
-                        continue
-                    if time.time() - entry.timestamp > entry.ttl:
-                        continue
+            for entry in self._cache.values():
+                if entry.version != self._cache_version:
+                    continue
+                if time.time() - entry.timestamp > entry.ttl:
+                    continue
 
-                    if entry.query_embedding is not None:
-                        similarity = self._cosine_similarity(
-                            query_embedding,
-                            entry.query_embedding
-                        )
+                if entry.query_embedding is not None:
+                    similarity = self._cosine_similarity(
+                        query_embedding,
+                        entry.query_embedding
+                    )
 
-                        if similarity > best_similarity and similarity >= threshold:
-                            best_similarity = similarity
-                            best_match = entry
+                    if similarity > best_similarity and similarity >= threshold:
+                        best_similarity = similarity
+                        best_match = entry
 
-                if best_match:
-                    print(f"[DEBUG] Cache hit (semantic, similarity={best_similarity:.2f}, kb_version={self._cache_version})")
-                    return best_match.result
+            if best_match:
+                print(f"[DEBUG] Cache hit (semantic, similarity={best_similarity:.2f}, kb_version={self._cache_version})")
+                return best_match.result
         return None
 
     def get(
