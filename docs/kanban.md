@@ -214,10 +214,66 @@ def test_hot_path_p95_latency():
 
 ---
 
+### [TASK-007] 検索タイムアウト対策
+
+**ステータス:** [ ]
+**依存:** なし
+**スコープ:** src/rag_answerer.py / Cloud Run設定
+**実装内容:**
+  - deal/master各コレクションのタイムアウト閾値を見直し
+  - Cloud Run 最小インスタンス数を1に設定（cold start排除）
+  - CPU/メモリ設定の確認・調整
+**完了条件:**
+  - [ ] "Timeout searching" ログが出なくなる
+  - [ ] pytest グリーン維持（271 passed以上）
+  - [ ] ruff / mypy（対象ファイル）エラー0
+**見積:** 60分
+**Escalationトリガー:** タイムアウト原因が外部API起因の場合
+
+---
+
+### [TASK-008] フォールバック過多の削減
+
+**ステータス:** [ ]
+**依存:** TASK-007
+**スコープ:** data/documents/ / src/kb_fast_path.py
+**実装内容:**
+  - ログでmissしたクエリを特定・リストアップ
+  - faq_kb.csv / Master TXTにカバレッジ追加
+  - kb_fast_pathの閾値・同義語を調整
+**完了条件:**
+  - [ ] フォールバック率 < 20%（eval_log.mdで計測）
+  - [ ] pytest グリーン維持
+  - [ ] ruff / mypy（対象ファイル）エラー0
+**見積:** 60〜90分
+**Escalationトリガー:** なし
+
+---
+
+### [TASK-009] B-6監査ログの強化
+
+**ステータス:** [x]
+**依存:** なし（TASK-007と並行可）
+**スコープ:** src/management_escalation.py / src/interfaces/line/handler.py
+**実装内容:**
+  - 返信本文（マスク版）・法的断定フラグ・判定理由を構造化ログに出力
+  - Cloud RunログからB-6合否を判定できる状態にする
+**完了条件:**
+  - [ ] B-6入力・出力・法的断定フラグがログに記録される
+  - [ ] pytest グリーン維持
+  - [ ] ruff / mypy（対象ファイル）エラー0
+**見積:** 45分
+**Escalationトリガー:** なし
+**コミットメッセージ候補:**
+  feat(compliance): add B-6 audit logging for legal assertion [TASK-009]
+
+---
+
 ## Done
 
 | ID | タイトル | 完了日 | コミット |
 |---|---|---|---|
+| TASK-009 | B-6監査ログの強化 | 2026-05-05 | （コミット後に記入） |
 | - | AGENTS.md 作成 | 2026-05-05 | - |
 | - | FRAMEWORK v2 作成 | 2026-05-05 | - |
 | - | CURSOR_PROMPTS 作成 | 2026-05-05 | - |

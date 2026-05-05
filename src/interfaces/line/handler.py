@@ -23,6 +23,23 @@ from src.interfaces.slack.formatter import build_slack_payload
 logger = logging.getLogger(__name__)
 
 
+def _log_line_reply_audit(reply_text: str, *, source: str) -> None:
+    """B-6 / ops audit: masked reply preview (no full text in logs)."""
+    rt = reply_text or ""
+    masked = rt[:30] + "..." if len(rt) > 30 else rt
+    logger.info(
+        json.dumps(
+            {
+                "event": "line_reply",
+                "source": source,
+                "reply_masked": masked,
+                "reply_len": len(rt),
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def _get_env(name: str, default: Optional[str] = None) -> str:
     value = os.getenv(name, default)
     if value is None:
@@ -278,6 +295,7 @@ def handle_line_webhook(
                 urgent = _urgent_for_fast_path_intent(fp.intent)
                 line_message = build_line_message_from_plain_text(fp.text or "", urgent=urgent)
                 logger.info("before_reply: KB fast path kind=%s len=%s", fp.kind, len(line_message))
+                _log_line_reply_audit(line_message, source="kb_fast_path")
                 ok = _reply_to_line(reply_token, line_message, channel_access_token)
                 logger.info("after_reply: LINE send attempted ok=%s", ok)
                 if ok:
@@ -348,6 +366,7 @@ def handle_line_webhook(
                 line_message = error_message
 
             logger.info("before_reply: sending LINE text len=%s", len(line_message))
+            _log_line_reply_audit(line_message, source="rag_answerer")
             ok = _reply_to_line(reply_token, line_message, channel_access_token)
             logger.info("after_reply: LINE send attempted ok=%s", ok)
             if ok:
