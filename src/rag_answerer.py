@@ -3,7 +3,7 @@
 import re
 import unicodedata
 import time
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
 from pydantic import BaseModel, Field
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,7 +13,7 @@ from src.config import Config
 from src.vector_store_manager import VectorStoreManager, filter_effective_documents
 from src.query_cache import QueryCache
 from src.tenant_auth import TenantAuth
-from src.responder import Responder, ResponseSchema
+from src.responder import Responder
 from src.utils.question_terms import (
     count_distinct_pipe_tokens_in_question,
     count_pipe_field_hits,
@@ -52,7 +52,7 @@ class AnswerSchema(BaseModel):
     V2のみ使用（破壊的変更）。呼び出し側はrender_answer_text()を使用。
     """
     items: List[AnswerItem] = Field(
-        min_items=1,  # 基本必須
+        min_length=1,  # 基本必須
         description="構造化された回答項目のリスト（禁止事項の列挙、手順のステップ、単一事実など）。必須。"
     )
     summary: str = Field(
@@ -300,6 +300,7 @@ class RAGAnswerer:
 """
         )
 
+        self._legal_term_resolver: Optional[LegalTermResolver] = None
         try:
             self._legal_term_resolver = LegalTermResolver.from_default()
         except Exception as e:
@@ -483,15 +484,27 @@ class RAGAnswerer:
                 f"[INFO] negative_keywords penalty -{penalty:.2f} applied (intent={intent}, score {before:.2f}->{item['score']:.2f})"
             )
 
+    def _to_scored_results(self, results: Sequence[Any]) -> List[Dict[str, Any]]:
+        """Normalize vector store results into [{'document': Document, 'score': float}] format."""
+        normalized: List[Dict[str, Any]] = []
+        for item in results:
+            if isinstance(item, dict) and "document" in item:
+                normalized.append(item)
+                continue
+            if isinstance(item, Document):
+                normalized.append({"document": item, "score": 1.0})
+        return normalized
+
     def _filter_scored_results(
         self,
-        scored_results: List[Dict[str, Any]],
+        scored_results: Sequence[Any],
         threshold: float,
         source_label: str,
         question: Optional[str] = None,
         allow_keyword_override: bool = False,
     ) -> List[Document]:
         """Filter scored results by threshold, return documents."""
+        scored_results = self._to_scored_results(scored_results)
         if not scored_results:
             print(f"[INFO] {source_label} search returned 0 results.")
             return []
@@ -567,6 +580,46 @@ class RAGAnswerer:
             return []
         return [item["document"] for item in scored_results]
 
+    def _inject_tai_kyo_kaiyaku_deal_row(
+        self, question: str, csv_scored: Sequence[Any]
+    ) -> List[Dict[str, Any]]:
+        """Ensure 契約_退去解約 is in deal candidates when phrasing is explicit but hybrid search misses the row.
+
+        Keyword override runs only on chunks already in scored results; low retrieval_k or embedding drift
+        can omit the row entirely — then override never fires and the user sees fallback.
+        """
+        csv_scored_norm = self._to_scored_results(csv_scored)
+        q = unicodedata.normalize("NFKC", question or "")
+        if not q.strip():
+            return csv_scored_norm
+        intents_seen = set()
+        for item in csv_scored_norm:
+            doc = item.get("document")
+            if doc is None:
+                continue
+            intent = (doc.metadata or {}).get("intent") or ""
+            if intent:
+                intents_seen.add(intent)
+        if "契約_退去解約" in intents_seen:
+            return csv_scored_norm
+        wants_mid = bool(re.search(r"中途解約|途中解約", q))
+        wants_tai_kyo = bool(re.search(r"退去\s*したい|退去希望|退居\s*したい", q))
+        if not wants_mid and not wants_tai_kyo:
+            return csv_scored_norm
+        fusion_floor = float(getattr(self.config, "csv_keyword_override_min_fusion_score", 0.36) or 0.36)
+        thr_csv = float(self.config.get_source_score_thresholds().get("csv", 0.4))
+        inject_score = max(fusion_floor, thr_csv, 0.42)
+        for doc in load_kb_documents_for_fast_path(self.config):
+            if (doc.metadata or {}).get("intent") != "契約_退去解約":
+                continue
+            print(
+                "[INFO] Injected 契約_退去解約 KB row into deal candidates "
+                f"(mid_term={wants_mid}, tai_kyo={wants_tai_kyo}, score={inject_score:.2f})."
+            )
+            injected = {"document": doc, "score": inject_score}
+            return [injected] + list(csv_scored_norm)
+        return csv_scored_norm
+
     def _hierarchical_search(
         self,
         question: str,
@@ -582,7 +635,9 @@ class RAGAnswerer:
         (contract-source questions must not be short-circuited by FAQ CSV completeness).
         """
         deal_results = self.vector_store_manager.search(question, sources=["deal"])
-        csv_scored = deal_results.get("deal", [])
+        csv_scored = self._inject_tai_kyo_kaiyaku_deal_row(
+            question, deal_results.get("deal", [])
+        )
         thresholds = self.config.get_source_score_thresholds()
         csv_docs = self._filter_scored_results(
             csv_scored,
@@ -904,8 +959,6 @@ class RAGAnswerer:
             snippet = doc.page_content[:200]
             candidates_text.append(f"文書{idx}: {snippet}")
         
-        candidates_str = "\n\n".join(candidates_text)
-        
         # Use LLM to rerank (simplified - in production, use cross-encoder)
         # For PoC, just return top N by taking first N (can be improved)
         # In a real implementation, you would score each candidate
@@ -935,7 +988,6 @@ class RAGAnswerer:
         if not tenant_info:
             return documents
         
-        tenant_room = tenant_info['room_number']
         filtered = []
         
         for doc in documents:
@@ -1255,6 +1307,9 @@ class RAGAnswerer:
         forced_system: Literal["auto", "kb_only", "rag"] = "auto",
         cache_namespace: Optional[str] = None,
         allow_semantic_cache: bool = True,
+        prior_clarification_intent: Optional[str] = None,
+        prior_clarification_normalized_query: Optional[str] = None,
+        prior_clarification_numeric_queries: Optional[Sequence[str]] = None,
     ) -> AnswerSchema:
         """Generate answer for question.
 
@@ -1263,6 +1318,9 @@ class RAGAnswerer:
             tenant_contract_id: Authenticated tenant's contract ID (optional)
             tenant_info: Optional tenant display fields for responder
             persist_cache: If False, do not write query_cache (caller may write after side-effect-free reply)
+            prior_clarification_intent: LINE clarification follow-up state (optional)
+            prior_clarification_normalized_query: Normalized query from prior clarification (optional)
+            prior_clarification_numeric_queries: Reserved for parity with LINE; unused inside answer()
 
         Returns:
             Structured answer
@@ -1381,7 +1439,14 @@ class RAGAnswerer:
         # Clarification-first guard for ambiguous topic queries (keep behavior consistent across kb_only/rag).
         try:
             kb_docs = load_kb_documents_for_fast_path(self.config)
-            fp = try_kb_fast_path(question, self.config, kb_docs)
+            fp = try_kb_fast_path(
+                question,
+                self.config,
+                kb_docs,
+                prior_clarification_intent=prior_clarification_intent,
+                prior_clarification_normalized_query=prior_clarification_normalized_query,
+                user_text_for_prior_match=question,
+            )
             if fp.kind == "hit" and fp.text and not contract_source_q:
                 hit_text = fp.text.strip()
                 answer = AnswerSchema(
@@ -1652,7 +1717,7 @@ class RAGAnswerer:
             # Check if KB documents are found in reranked results
             kb_docs_in_reranked = [doc for doc in reranked if doc.metadata.get('type') == 'kb_faq']
             if not kb_docs_in_reranked:
-                print(f"[DEBUG] Router selected deal_only but no KB CSV found. Retrying deal-only search...")
+                print("[DEBUG] Router selected deal_only but no KB CSV found. Retrying deal-only search...")
                 # Retry search with deal only
                 deal_results = self.vector_store_manager.search(question, sources=["deal"])
                 deal_scored = deal_results.get("deal", [])
@@ -1953,11 +2018,12 @@ class RAGAnswerer:
             docs_for_answer, contract_source_q=contract_source_q
         )
         answer_chain = selected_prompt | self.llm_structured
-        answer = answer_chain.invoke({
+        raw_answer = answer_chain.invoke({
             "question": question,
             "evidence": evidence_text,
             "tenant_context": tenant_context,
         })
+        answer = cast(AnswerSchema, raw_answer if isinstance(raw_answer, AnswerSchema) else AnswerSchema.model_validate(raw_answer))
         
         # Replace LLM-generated evidence with actual document IDs for evaluation
         answer.evidence = evidence_ids

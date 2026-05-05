@@ -189,6 +189,31 @@ def test_hot_path_p95_latency():
 
 ---
 
+### [TASK-006] clarification文脈引き継ぎ・退去解約取りこぼし対策
+
+**ステータス:** `[>]`  
+**依存:** TASK-A/B/C（122c42f）  
+**スコープ:** `src/interfaces/line/handler.py` `src/rag_answerer.py` `docs/testing/LINE_MANUAL_TEST_CASES.md`  
+**見積:** 45〜60分
+
+**実装内容:**
+- `answer()`に`prior_clarification_*`引数を追加
+- `try_kb_fast_path()`にprior文脈を渡す処理を追加
+- `_inject_tai_kyo_kaiyaku_deal_row()`を追加（退去解約の取りこぼし対策）
+- `LINE_MANUAL_TEST_CASES.md`に`prior_clarification`回帰試験セクションを追加
+
+**完了条件:**
+- [ ] pytest 257 passed 以上を維持
+- [ ] ruff / mypy（src対象ファイルのみ）エラー0
+- [ ] `LINE_MANUAL_TEST_CASES.md`の回帰試験手順が確認できる状態
+
+**Escalationトリガー:** pytestが落ちた場合
+
+**コミットメッセージ候補:**
+`feat(rag): add prior_clarification context propagation and taikiyo injection [TASK-006]`
+
+---
+
 ## Done
 
 | ID | タイトル | 完了日 | コミット |

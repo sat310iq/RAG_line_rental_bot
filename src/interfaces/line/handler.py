@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import requests
+import requests  # type: ignore[import-untyped]  # types-requests 未導入のため（TASK-005で整備）
 
 from src.config import get_config
 from src.interfaces.line.idempotency import (
@@ -77,7 +77,7 @@ def _reply_to_line(reply_token: str, message: str, channel_access_token: str) ->
         "Content-Type": "application/json",
         "Authorization": f"Bearer {channel_access_token}",
     }
-    payload = {
+    payload: Dict[str, Any] = {
         "replyToken": reply_token,
         "messages": [{"type": "text", "text": message}],
     }
@@ -316,7 +316,13 @@ def handle_line_webhook(
 
             try:
                 logger.info("before_reply: RAG answer starting")
-                response = bundle.rag_answerer.answer(effective_text, persist_cache=False)
+                response = bundle.rag_answerer.answer(
+                    effective_text,
+                    persist_cache=False,
+                    prior_clarification_intent=prior_intent,
+                    prior_clarification_normalized_query=prior_norm,
+                    prior_clarification_numeric_queries=prior_numeric,
+                )
             except Exception as e:
                 logger.exception("RAG answer failed for query=%s: %s", text[:100], e)
                 ok = _reply_to_line(reply_token, error_message, channel_access_token)
