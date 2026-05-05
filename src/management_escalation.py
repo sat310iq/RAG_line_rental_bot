@@ -28,6 +28,10 @@ LEGAL_JUDGMENT_KEYWORDS: Final[tuple[str, ...]] = (
     "全部大家",
     "契約違反かどうか",
     "判断してもらえ",
+    "権利",
+    "義務",
+    "無効",
+    "合法",
 )
 
 MONEY_CLAIM_KEYWORDS: Final[tuple[str, ...]] = (
@@ -55,6 +59,8 @@ JUDGMENT_PHRASES: Final[tuple[str, ...]] = (
     "勝てますか",
     "違反ですか",
     "違法ですか",
+    "無効ですか",
+    "合法ですか",
     "必要ですか",
     "されますか",
     "られますか",
@@ -63,6 +69,17 @@ JUDGMENT_PHRASES: Final[tuple[str, ...]] = (
     "ですよね",
     "いいですか",
     "判断してもらえ",
+)
+
+CONTRACT_REFERENCE_KEYWORDS: Final[tuple[str, ...]] = (
+    "契約書",
+    "重要事項説明書",
+    "重説",
+    "特約",
+    "第",
+    "条",
+    "条項",
+    "別表",
 )
 
 
@@ -75,5 +92,11 @@ def should_escalate_to_management(question: str) -> bool:
     legal_hit = any(k in q for k in LEGAL_JUDGMENT_KEYWORDS)
     money_hit = any(k in q for k in MONEY_CLAIM_KEYWORDS)
     judgment_hit = any(k in q for k in JUDGMENT_PHRASES)
+    contract_ref_hit = any(k in q for k in CONTRACT_REFERENCE_KEYWORDS)
+
+    # 条項説明の導線（特約・第◯条・別表など）はRAG側で根拠提示を優先する。
+    # ただし、法的断定要求の語があればエスカレーション判定を継続する。
+    if contract_ref_hit and not (legal_hit or money_hit):
+        return False
 
     return (legal_hit or money_hit) and judgment_hit
