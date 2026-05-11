@@ -139,10 +139,31 @@ def test_hot_path_p95_latency():
 
 ---
 
-## Sprint 2｜（Prompt Dで自動生成 — LINEテスト後の改善タスク）
+## Sprint 2｜Cloud Run 本番化タスク
 
-> ここ以降はLINEテスト結果を受けてPrompt D（Kanban Agent）で生成する。  
-> 以下はプレースホルダー。
+### [TASK-010] Firestore 冪等性の不整合対応
+
+**ステータス:** `[ ]`  
+**依存:** Phase 2-1（Firestore idempotency 実装済み）  
+**スコープ:** `src/interfaces/line/idempotency.py`  
+**見積:** 45〜60分
+
+**設計メモ（1行）:**  
+`_firestore_mark_aborted` の read-then-delete が非トランザクションのため、2インスタンス競合時に `processing` エントリが残る可能性がある。
+
+**実装内容:**
+- `_firestore_mark_aborted` をトランザクション化（`firestore.transactional` デコレータ）
+- Firestore TTL ポリシーの設計メモ追加（`line_message_ids` コレクションに TTL フィールド設定案）
+- `FIRESTORE_IDEMPOTENCY_ENABLED=true` での統合テストケース追加（Firestore エミュレータ or モック）
+
+**完了条件:**
+- [ ] `_firestore_mark_aborted` がトランザクション内で status 確認 → delete を行う
+- [ ] pytest グリーン維持（276 passed 以上）
+- [ ] ruff / mypy（対象ファイル）エラー 0
+
+**Escalationトリガー:** Firestore エミュレータのセットアップが困難な場合 → モックで代替し人間に確認
+
+---
 
 ### [TASK-004] TBD — LINEテスト結果による
 
@@ -191,7 +212,7 @@ def test_hot_path_p95_latency():
 
 ### [TASK-006] clarification文脈引き継ぎ・退去解約取りこぼし対策
 
-**ステータス:** `[>]`  
+**ステータス:** `[x]`  
 **依存:** TASK-A/B/C（122c42f）  
 **スコープ:** `src/interfaces/line/handler.py` `src/rag_answerer.py` `docs/testing/LINE_MANUAL_TEST_CASES.md`  
 **見積:** 45〜60分
@@ -274,6 +295,8 @@ def test_hot_path_p95_latency():
 | ID | タイトル | 完了日 | コミット |
 |---|---|---|---|
 | TASK-009 | B-6監査ログの強化 | 2026-05-05 | 5bc4c48 |
+| TASK-006 | clarification文脈引き継ぎ・退去解約取りこぼし対策 | 2026-05-05 | fce8e9d |
+| - | Cloud Run hardening Phase 1-3〜2-3 | 2026-05-11 | 48a4ac8 |
 | - | AGENTS.md 作成 | 2026-05-05 | - |
 | - | FRAMEWORK v2 作成 | 2026-05-05 | - |
 | - | CURSOR_PROMPTS 作成 | 2026-05-05 | - |
