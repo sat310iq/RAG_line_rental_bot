@@ -319,47 +319,6 @@ class VectorStoreManager:
             weights=[0.5, 0.5]  # Equal weights for BM25 and Vector
         )
     
-    def _search_collection(
-        self,
-        query: str,
-        collection_name: str,
-        vector_store: Optional[Chroma],
-        bm25_retriever: Optional[BM25Retriever]
-    ) -> List[Document]:
-        """Search a single collection with timeout.
-        
-        Args:
-            query: Search query
-            collection_name: Name of collection
-            vector_store: Chroma vector store
-            bm25_retriever: BM25 retriever
-            timeout: Timeout in seconds
-            
-        Returns:
-            List of retrieved Document objects
-        """
-        try:
-            hybrid_retriever = self._create_hybrid_retriever(
-                vector_store, bm25_retriever, collection_name
-            )
-            
-            if not hybrid_retriever:
-                return []
-            
-            # Execute retrieval with timeout
-            start_time = time.time()
-            results = _invoke_retriever(hybrid_retriever, query)
-            elapsed = time.time() - start_time
-            
-            if elapsed > self.config.rag_search_timeout_sec:
-                print(f"Warning: {collection_name} search took {elapsed:.2f}s (timeout: {self.config.rag_search_timeout_sec}s)")
-            
-            return results
-            
-        except Exception as e:
-            print(f"Error searching {collection_name}: {e}")
-            return []
-    
     def _search_collection_scored(
         self,
         query: str,
@@ -387,8 +346,8 @@ class VectorStoreManager:
                         "retriever": "vector",
                     }
             except Exception as e:
-                print(f"Error searching {collection_name} vector: {e}")
-        
+                logger.error("rag_search_error collection=%s retriever=vector error=%s", collection_name, e)
+
         # BM25 search (keyword score)
         if bm25_retriever:
             try:
@@ -410,7 +369,7 @@ class VectorStoreManager:
                             "retriever": "bm25",
                         }
             except Exception as e:
-                print(f"Error searching {collection_name} BM25: {e}")
+                logger.error("rag_search_error collection=%s retriever=bm25 error=%s", collection_name, e)
         
         scored_list = list(scored_map.values())
         scored_list.sort(key=lambda x: x["score"], reverse=True)
@@ -435,12 +394,15 @@ class VectorStoreManager:
             sources = ['deal', 'master']
         
         results: Dict[str, List[Dict[str, Any]]] = {}
-        
+        timeout = self.config.rag_search_timeout_sec
+
         # Execute searches in parallel with timeout
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {}
-            
+            futures: Dict[str, Any] = {}
+            start_times: Dict[str, float] = {}
+
             if 'deal' in sources:
+                start_times['deal'] = time.time()
                 futures['deal'] = executor.submit(
                     self._search_collection_scored,
                     query,
@@ -448,8 +410,9 @@ class VectorStoreManager:
                     self.deal_vector_store,
                     self.deal_bm25
                 )
-            
+
             if 'master' in sources:
+                start_times['master'] = time.time()
                 futures['master'] = executor.submit(
                     self._search_collection_scored,
                     query,
@@ -457,18 +420,24 @@ class VectorStoreManager:
                     self.master_vector_store,
                     self.master_bm25
                 )
-            
-            
-            # Collect results with timeout
+
+            # Collect results with per-source timeout
             for source, future in futures.items():
+                elapsed = time.time() - start_times[source]
+                remaining = max(timeout - elapsed, 0.0)
                 try:
-                    docs = future.result(timeout=self.config.rag_search_timeout_sec)
+                    docs = future.result(timeout=remaining if remaining > 0 else timeout)
                     results[source] = docs
+                    logger.debug("rag_search_ok collection=%s docs=%d", source, len(docs))
                 except FutureTimeoutError:
-                    print(f"Timeout searching {source} collection")
+                    elapsed_total = time.time() - start_times[source]
+                    logger.warning(
+                        "rag_search_timeout collection=%s timeout_sec=%.1f elapsed_sec=%.2f",
+                        source, timeout, elapsed_total,
+                    )
                     results[source] = []
                 except Exception as e:
-                    print(f"Error retrieving from {source}: {e}")
+                    logger.error("rag_search_error collection=%s error=%s", source, e)
                     results[source] = []
         
         # Deduplicate results

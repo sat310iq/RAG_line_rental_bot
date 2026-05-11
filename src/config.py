@@ -61,7 +61,7 @@ class Config(BaseSettings):
         default=5,
         description="Top documents after rerank (slightly wider head for master TXT+KB merge)",
     )
-    rag_search_timeout_sec: float = Field(default=3.0, description="Search timeout seconds")
+    rag_search_timeout_sec: float = Field(default=10.0, description="Per-collection search timeout (sec). 3 s was too tight on warm Cloud Run with 2 GiB; 10 s gives headroom while staying well within 60 s Cloud Run timeout.")
     csv_score_threshold: float = Field(
         default=0.40,
         description="CSV match threshold; keep aligned with LOCAL_VS_CLOUDRUN.md",
