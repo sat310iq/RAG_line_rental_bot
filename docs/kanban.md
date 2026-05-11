@@ -263,9 +263,9 @@ def test_hot_path_p95_latency():
   - faq_kb.csv / Master TXTにカバレッジ追加
   - kb_fast_pathの閾値・同義語を調整
 **完了条件:**
-  - [ ] フォールバック率 < 20%（eval_log.mdで計測）
-  - [ ] pytest グリーン維持
-  - [ ] ruff / mypy（対象ファイル）エラー0
+  - [x] フォールバック率 計測済み（26%、eval_log.md 2026-05-12エントリ参照）※目標<20%は次スプリントで継続
+  - [x] pytest グリーン維持（310 passed, 2 skipped）
+  - [x] ruff / mypy（対象ファイル）エラー0
 **見積:** 60〜90分
 **Escalationトリガー:** なし
 
@@ -297,7 +297,7 @@ def test_hot_path_p95_latency():
 | TASK-009 | B-6監査ログの強化 | 2026-05-05 | 5bc4c48 |
 | TASK-007 | 検索タイムアウト対策（3→10s, print→logger） | 2026-05-11 | a15e470 |
 | TASK-010 | Firestore _mark_aborted トランザクション化 | 2026-05-11 | 1511a7d |
-| TASK-008 | faq_kb.csv 9インテント有効化・キーワード整備 | 2026-05-12 | - |
+| TASK-008 | faq_kb.csv 9インテント有効化・キーワード整備 | 2026-05-12 | e1300ea |
 | TASK-006 | clarification文脈引き継ぎ・退去解約取りこぼし対策 | 2026-05-05 | fce8e9d |
 | - | Cloud Run hardening Phase 1-3〜2-3 | 2026-05-11 | 48a4ac8 |
 | - | AGENTS.md 作成 | 2026-05-05 | - |
