@@ -20,7 +20,7 @@ from src.interfaces.line.idempotency import (
 from src.interfaces.slack.client import post_to_slack
 from src.interfaces.slack.formatter import build_slack_payload
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("line_handler")
 
 
 def _log_line_reply_audit(reply_text: str, *, source: str) -> None:

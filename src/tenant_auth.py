@@ -68,69 +68,19 @@ class TenantAuth:
     
     def authenticate_by_pin(self, pin: str) -> Optional[Dict[str, str]]:
         """Authenticate tenant using PIN only.
-        
-        Args:
-            pin: PIN code (must be "777" to succeed)
-            
-        Returns:
-            Empty dict if PIN is "777", None otherwise.
-            No tenant information is returned (authentication table removed).
+
+        PoC: tenant authentication table is not implemented.
+        Always returns None. Replace with real auth before production use.
         """
-        pin = pin.strip()
-        
-        if not pin:
-            return None
-        
-        # PINが"777"の場合のみ認証成功（認証テーブルなし）
-        if pin == "777":
-            # 認証成功のみを返す（部屋番号・名前は含まない）
-            return {}
-        
-        # PINが"777"以外の場合は認証失敗
         return None
     
     def authenticate(self, contract_id: str, pin: str) -> Optional[Dict[str, str]]:
         """Authenticate tenant using contract ID and PIN.
-        
-        Args:
-            contract_id: Tenant contract ID
-            pin: PIN code (if "777", authentication succeeds for any valid contract ID)
-            
-        Returns:
-            Tenant information dict if authentication succeeds, None otherwise
+
+        PoC: tenant authentication table is not implemented.
+        Always returns None. Replace with real auth before production use.
         """
-        contract_id = contract_id.strip()
-        pin = pin.strip()
-        
-        if not contract_id or not pin:
-            return None
-        
-        tenant = self._tenants.get(contract_id)
-        if not tenant:
-            return None
-        
-        # PINが"777"の場合は一律認証成功
-        if pin == "777":
-            return {
-                'contract_id': tenant['contract_id'],
-                'room_number': tenant['room_number'],
-                'name': tenant['name'],
-                'phone': tenant['phone'],
-                'email': tenant['email'],
-            }
-        
-        # 従来のPINチェック（後方互換性）
-        if tenant['pin'] != pin:
-            return None
-        
-        # Return tenant info (excluding PIN for security)
-        return {
-            'contract_id': tenant['contract_id'],
-            'room_number': tenant['room_number'],
-            'name': tenant['name'],
-            'phone': tenant['phone'],
-            'email': tenant['email'],
-        }
+        return None
     
     def get_tenant_info(self, contract_id: str) -> Optional[Dict[str, str]]:
         """Get tenant information by contract ID (without PIN verification).

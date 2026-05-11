@@ -4,7 +4,9 @@
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=8080
+
 WORKDIR /app
 
 COPY requirements.txt .
@@ -14,8 +16,12 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY data/ ./data/
 
-# App expects vector store at data/vector_store (and data/documents, data/faq_kb.csv).
-# If data/vector_store is missing, run locally: python scripts/reindex_vector_db.py
+# Bake SentenceTransformer weights into the image so Cloud Run cold starts do not
+# trigger a multi-minute Hugging Face download before the first LINE reply.
+# LINE reply tokens expire in 60 s — a runtime download would cause silent reply failures.
+ENV HF_HOME=/app/.cache/huggingface
+RUN mkdir -p /app/.cache/huggingface && python -c \
+  "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 
 EXPOSE 8080
 CMD uvicorn src.api.main:app --host 0.0.0.0 --port ${PORT}

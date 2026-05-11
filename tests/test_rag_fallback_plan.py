@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from src.config import load_config
 from src.vector_store_manager import VectorStoreManager
 from src.query_cache import QueryCache
@@ -20,6 +22,9 @@ def _make_rag():
 
 
 def test_csv_keyword_override():
+    api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    if not api_key or api_key.startswith("sk-test-"):
+        pytest.skip("OPENAI_API_KEY required for vector-backed keyword override test")
     rag = _make_rag()
     answer = rag.answer("ペット飼育できますか？")
     assert answer.evidence

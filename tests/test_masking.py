@@ -56,10 +56,6 @@ def test_tenant_auth():
     tenant_info = tenant_auth.authenticate('TEST001', '1234')
     assert tenant_info is None, "authenticate() should return None when _tenants is empty"
     
-    # Test authenticate_by_pin() with PIN "777" (special case that succeeds)
-    pin_auth = tenant_auth.authenticate_by_pin('777')
-    assert pin_auth == {}, "authenticate_by_pin('777') should return empty dict"
-    
-    # Test authenticate_by_pin() with wrong PIN
-    failed_pin = tenant_auth.authenticate_by_pin('1234')
-    assert failed_pin is None, "authenticate_by_pin() should return None for wrong PIN"
+    # PoC: authenticate_by_pin() is not implemented — always returns None
+    assert tenant_auth.authenticate_by_pin('777') is None
+    assert tenant_auth.authenticate_by_pin('1234') is None

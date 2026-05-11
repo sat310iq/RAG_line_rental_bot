@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Header, Request
@@ -27,8 +27,15 @@ bootstrap_dotenv()
 logger = logging.getLogger(__name__)
 
 
+# Max concurrent LINE RAG threads per Cloud Run instance.
+# Cloud Run webhook: 1 CPU / 2 GiB. Keep headroom for the async event loop.
+_WEBHOOK_THREAD_POOL_SIZE = int(os.getenv("WEBHOOK_THREAD_POOL_SIZE", "4"))
+_webhook_pool: ThreadPoolExecutor | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _webhook_pool
     logging.basicConfig(level=logging.INFO)
     config = load_config()
     if config.rag_skip_startup_checks:
@@ -56,7 +63,15 @@ async def lifespan(app: FastAPI):
         from src import rag_app_state
 
         rag_app_state.set_init_failed("initialize_rag raised (see logs)")
+
+    _webhook_pool = ThreadPoolExecutor(
+        max_workers=_WEBHOOK_THREAD_POOL_SIZE,
+        thread_name_prefix="line-webhook-rag",
+    )
+    logger.info("webhook_thread_pool_started max_workers=%d", _WEBHOOK_THREAD_POOL_SIZE)
     yield
+    _webhook_pool.shutdown(wait=False)
+    logger.info("webhook_thread_pool_shutdown")
 
 
 app = FastAPI(title="LINE Webhook", lifespan=lifespan)
@@ -140,11 +155,10 @@ async def debug_rag(body: RAGDebugBody):
 async def line_webhook(
     request: Request,
     x_line_signature: str = Header(default="", alias="X-Line-Signature"),
-    skip_verify: bool = False,
 ):
     """Respond quickly with 200 so LINE does not time out; RAG + Reply API run in a worker thread."""
     body = await request.body()
-    if not skip_verify and not verify_line_webhook_signature(body, x_line_signature):
+    if not verify_line_webhook_signature(body, x_line_signature):
         return JSONResponse(
             status_code=401,
             content={"status": "error", "message": "Invalid signature"},
@@ -152,6 +166,7 @@ async def line_webhook(
 
     def process_line_event() -> None:
         try:
+            # Signature already verified at the HTTP boundary; skip re-verification in the thread.
             result = handle_line_webhook(body, "", skip_verify=True)
             if not result.get("ok"):
                 logger.warning("LINE webhook handler returned: %s", result)
@@ -159,12 +174,13 @@ async def line_webhook(
             logger.exception("LINE webhook background failed: %s", e)
             try_send_fallback_to_events(body)
 
-    # Thread (not Starlette BackgroundTasks): more reliable after HTTP 200 on Cloud Run.
-    threading.Thread(
-        target=process_line_event,
-        name="line-webhook-rag",
-        daemon=False,
-    ).start()
+    pool = _webhook_pool
+    if pool is not None:
+        pool.submit(process_line_event)
+    else:
+        # Fallback during startup before pool is ready (should not occur in normal operation).
+        import threading
+        threading.Thread(target=process_line_event, daemon=False).start()
     return {"status": "ok"}
 
 

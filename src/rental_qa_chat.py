@@ -40,31 +40,22 @@ def main():
     tenant_contract_id = None
     
     try:
-        # Authenticate user
-        print("本人確認を行います。")
-        pin = input("PINを入力してください: ").strip()
+        # PoC: tenant auth not implemented — collect room/name for session context only.
+        print("[PoC] 入居者認証は未実装です。部屋番号とお名前を入力してください。")
         room_number = input("部屋番号を入力してください: ").strip()
         tenant_name = input("お名前を入力してください: ").strip()
-        
-        tenant_info = tenant_auth.authenticate_by_pin(pin)
-        if tenant_info is None:
-            print("認証に失敗しました。", file=sys.stderr)
-            sys.exit(1)
-        
-        # 認証成功
-        print("認証成功")
+
         print(f"部屋番号: {room_number}, お名前: {tenant_name}")
-        
-        # セッション情報として保持（PINはセキュリティのため含めない）
+
         session_info = {
             'room_number': room_number,
             'name': tenant_name
         }
-        
-        tenant_contract_id = None  # 認証テーブルなしのためNone
+
+        tenant_contract_id = None
     except Exception as e:
-        print(f"認証エラー: {e}", file=sys.stderr)
-        print("認証をスキップして続行します。", file=sys.stderr)
+        print(f"入力エラー: {e}", file=sys.stderr)
+        print("セッション情報なしで続行します。", file=sys.stderr)
     
     print()
     print("RAGシステムを初期化しています...")

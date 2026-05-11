@@ -9,7 +9,9 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${GCP_REGION:-asia-northeast1}"
 SERVICE_NAME="line-webhook"
-IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
+AR_REPO="${AR_REPO:-cloud-run}"
+IMAGE_NAME="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}"
+REVISION_SUFFIX="$(date -u +%Y%m%d-%H%M)"
 
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "Set GCP_PROJECT_ID or run: gcloud config set project YOUR_PROJECT_ID"
@@ -55,9 +57,12 @@ else
 fi
 
 echo "Building $IMAGE_NAME from $ROOT_DIR (Dockerfile.webhook)..."
-gcloud builds submit . --config=deploy/cloudbuild_webhook.yaml --project "$PROJECT_ID"
+gcloud builds submit . \
+  --config=deploy/cloudbuild_webhook.yaml \
+  --substitutions="_IMAGE_NAME=${IMAGE_NAME}" \
+  --project "$PROJECT_ID"
 
-echo "Deploying $SERVICE_NAME to Cloud Run..."
+echo "Deploying $SERVICE_NAME to Cloud Run (revision: ${REVISION_SUFFIX})..."
 gcloud run deploy "$SERVICE_NAME" \
   --image "$IMAGE_NAME" \
   --region "$REGION" \
@@ -65,10 +70,16 @@ gcloud run deploy "$SERVICE_NAME" \
   --allow-unauthenticated \
   --memory 2Gi \
   --cpu 1 \
-  --min-instances 0 \
+  --no-cpu-throttling \
+  --concurrency "${WEBHOOK_CONCURRENCY:-4}" \
+  --min-instances 1 \
   --max-instances 5 \
   --timeout 60 \
+  --revision-suffix "$REVISION_SUFFIX" \
   --project "$PROJECT_ID"
 
-echo "Done. Set OPENAI_API_KEY, LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN, GCP_PROJECT_ID, PUBSUB_TOPIC_NAME in Cloud Run console."
+echo "Done. Revision: ${SERVICE_NAME}-${REVISION_SUFFIX}"
+echo "  --no-cpu-throttling: enabled (background RAG threads keep CPU after HTTP 200)"
+echo "  concurrency: ${WEBHOOK_CONCURRENCY:-4} req/instance (set WEBHOOK_CONCURRENCY=N to override)"
+echo "To roll back: gcloud run services update-traffic ${SERVICE_NAME} --to-revisions=PREV_REVISION=100 --region=${REGION}"
 echo "To match local behaviour (e.g. ペット/ガス): set CSV_SCORE_THRESHOLD=0.40 and RAG_RETRIEVAL_K=16 (or leave unset for code default 16). See docs/LOCAL_VS_CLOUDRUN.md"

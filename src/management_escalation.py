@@ -108,10 +108,10 @@ def should_escalate_to_management(question: str) -> bool:
     if not q:
         escalate = False
         reason = "empty_question"
-    elif contract_ref_hit and not (legal_hit or money_hit):
+    elif contract_ref_hit and not judgment_hit:
         # 条項説明の導線（特約・第◯条・別表など）はRAG側で根拠提示を優先する。
         escalate = False
-        reason = "contract_ref_only"
+        reason = "contract_ref"
     elif (legal_hit or money_hit) and judgment_hit:
         escalate = True
         reason = "legal_assertion"

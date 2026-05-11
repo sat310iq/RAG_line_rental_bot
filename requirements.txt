@@ -29,8 +29,9 @@ requests>=2.31.0
 fastapi>=0.110.0
 uvicorn>=0.27.0
 
-# GCP (Pub/Sub for LINE events)
+# GCP (Pub/Sub for LINE events; Firestore for cross-instance idempotency)
 google-cloud-pubsub>=2.18.0
+google-cloud-firestore>=2.13.0
 
 # PII detection (optional, can use regex as fallback)
 # presidio-analyzer>=2.2.0

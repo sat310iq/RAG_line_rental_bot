@@ -1,0 +1,29 @@
+# Cloud Build config for automated test execution (CI only — no deploy).
+#
+# Triggers:
+#   - PR create/update  → cloudbuild_test trigger (PR trigger)
+#   - main push         → cloudbuild_test trigger (push trigger)
+#
+# Run manually:
+#   gcloud builds submit . --config=deploy/cloudbuild_test.yaml
+#
+# NOTE: This file is intentionally separate from cloudbuild_webhook.yaml.
+#       Do NOT add deploy steps here.
+
+steps:
+  # ---------------------------------------------------------------
+  # Single step: install deps and run tests in same container.
+  # Cloud Build steps are isolated; installed packages are not shared
+  # automatically across separate steps.
+  # ---------------------------------------------------------------
+  - name: 'python:3.11-slim'
+    id: 'install-and-test'
+    entrypoint: /bin/bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt --quiet
+        python3 -m pytest -q tests
+
+# Build timeout (adjust after measuring actual duration)
+timeout: 300s

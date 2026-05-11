@@ -1,8 +1,19 @@
 """Tests for management escalation guard (no API)."""
 
+import json
+import logging
+
 import pytest
 
 from src.management_escalation import should_escalate_to_management
+
+
+def _collect_escalation_logs(records):
+    return [
+        json.loads(r.message)
+        for r in records
+        if r.name == "src.management_escalation" and r.message.startswith("{")
+    ]
 
 
 def test_should_escalate_legal_or_monetary_judgment():
@@ -64,3 +75,54 @@ def test_contract_reference_does_not_escalate(question: str):
 def test_legal_assertion_escalates(question: str):
     """法的断定要求はescalationする（B-6ブロック条件）"""
     assert should_escalate_to_management(question) is True
+
+
+def test_b20_contract_ref_logged(caplog):
+    """B-20: 特約参照はescalate=False・reason=contract_refがログに出る"""
+    with caplog.at_level(logging.INFO, logger="src.management_escalation"):
+        result = should_escalate_to_management("特約⑥は無効じゃないですか？")
+
+    assert result is False
+
+    log_entries = _collect_escalation_logs(caplog.records)
+    assert len(log_entries) >= 1
+    entry = log_entries[-1]
+    assert entry["event"] == "escalation_check"
+    assert entry["contract_ref_hit"] is True
+    assert entry["escalate"] is False
+    assert entry["reason"] == "contract_ref"
+
+
+def test_b22_legal_assertion_logged(caplog):
+    """B-22: 法的断定要求はescalate=True・reason=legal_assertionがログに出る"""
+    with caplog.at_level(logging.INFO, logger="src.management_escalation"):
+        result = should_escalate_to_management("大家が修繕してくれない、法的に請求できますか？")
+
+    assert result is True
+
+    log_entries = _collect_escalation_logs(caplog.records)
+    assert len(log_entries) >= 1
+    entry = log_entries[-1]
+    assert entry["event"] == "escalation_check"
+    assert entry["legal_hit"] is True
+    assert entry["escalate"] is True
+    assert entry["reason"] == "legal_assertion"
+
+
+@pytest.mark.parametrize(
+    "question,expected_reason",
+    [
+        ("この特約は消費者契約法に違反しませんか？", "contract_ref"),
+        ("賃料減額を請求する権利はありますか？", "legal_assertion"),
+        ("抵当権実行で出て行く義務はありますか？", "legal_assertion"),
+    ],
+)
+def test_b6_remaining_log_entries(question, expected_reason, caplog):
+    """B-21/B-23/B-24のログ出力確認"""
+    with caplog.at_level(logging.INFO, logger="src.management_escalation"):
+        should_escalate_to_management(question)
+
+    log_entries = _collect_escalation_logs(caplog.records)
+    assert len(log_entries) >= 1
+    entry = log_entries[-1]
+    assert entry["reason"] == expected_reason

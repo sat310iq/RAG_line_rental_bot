@@ -367,11 +367,6 @@ class Config(BaseSettings):
 
 _config: Optional[Config] = None
 
-# Shared secrets file (sibling assignment repo layout).
-# Default: ../LangGraph/code/.env
-# Optional override: RENTAL_RAG_SHARED_ENV_FILE (process env)
-_SHARED_ENV_RELATIVE = Path("..") / "LangGraph" / "code" / ".env"
-
 _last_env_bootstrap: Dict[str, Any] = {}
 
 
@@ -383,47 +378,40 @@ def get_env_bootstrap_meta() -> Dict[str, Any]:
 def bootstrap_dotenv(project_root: Optional[Path] = None) -> None:
     """Load env files in a reproducible order.
 
-    1) Shared .env (default sibling or explicit override) with override=True
-    2) Local .env with override=False
+    1) If RENTAL_RAG_SHARED_ENV_FILE is set, load that file first (explicit override).
+    2) Load the project-local .env (never a sibling-repo path).
+
+    Cloud Run: env vars are injected by the runtime — no .env file is read.
+    Local dev: copy env.example to .env and fill in secrets.
     """
     global _last_env_bootstrap
 
     root = project_root or Path(__file__).resolve().parent.parent
-    default_shared = (root / _SHARED_ENV_RELATIVE).resolve()
     meta: Dict[str, Any] = {
         "mode": "bootstrap",
         "project_root": str(root.resolve()),
         "shared_env_override_var": None,
-        "shared_env_default_path": str(default_shared),
         "shared_env_loaded_path": None,
         "rental_env_path": str((root / ".env").resolve()),
         "rental_env_loaded": False,
-        "fallback_load_dotenv_cwd": False,
     }
+
     shared_override = os.environ.get("RENTAL_RAG_SHARED_ENV_FILE", "").strip()
     if shared_override:
-        meta["shared_env_override_var"] = shared_override
         shared_path = Path(shared_override).expanduser().resolve()
-    else:
-        shared_path = default_shared
-
-    if shared_path.is_file():
+        meta["shared_env_override_var"] = shared_override
+        if not shared_path.is_file():
+            raise RuntimeError(
+                f"RENTAL_RAG_SHARED_ENV_FILE is set but file not found: {shared_path}. "
+                "Fix the path or unset the variable."
+            )
         load_dotenv(shared_path, override=False)
         meta["shared_env_loaded_path"] = str(shared_path)
-    elif shared_override:
-        raise RuntimeError(
-            f"RENTAL_RAG_SHARED_ENV_FILE is set but file not found: {shared_path}. "
-            "Fix the path or unset the variable."
-        )
 
     rental_env = root / ".env"
-
     if rental_env.is_file():
         load_dotenv(rental_env, override=False)
         meta["rental_env_loaded"] = True
-    elif not shared_path.is_file():
-        load_dotenv()
-        meta["fallback_load_dotenv_cwd"] = True
 
     _last_env_bootstrap = meta
 
