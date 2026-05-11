@@ -65,10 +65,17 @@ def _firestore_mark_aborted(message_id: str) -> None:
 
     db = firestore.Client()
     ref = db.collection(_COLLECTION).document(message_id)
-    snap = ref.get()
-    # Only clear the processing flag; leave completed entries untouched.
-    if snap.exists and (snap.to_dict() or {}).get("status") == "processing":
-        ref.delete()
+
+    @firestore.transactional
+    def _abort(transaction: firestore.Transaction) -> None:
+        snap = ref.get(transaction=transaction)
+        # Only clear the processing flag; leave completed entries untouched.
+        # Transactional read+delete prevents a race where mark_completed runs
+        # between the read and delete, which would delete a completed entry.
+        if snap.exists and (snap.to_dict() or {}).get("status") == "processing":
+            transaction.delete(ref)
+
+    _abort(db.transaction())
 
 
 # ---------------------------------------------------------------------------
