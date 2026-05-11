@@ -143,7 +143,7 @@ def test_hot_path_p95_latency():
 
 ### [TASK-010] Firestore 冪等性の不整合対応
 
-**ステータス:** `[ ]`  
+**ステータス:** `[x]`  
 **依存:** Phase 2-1（Firestore idempotency 実装済み）  
 **スコープ:** `src/interfaces/line/idempotency.py`  
 **見積:** 45〜60分
@@ -295,6 +295,7 @@ def test_hot_path_p95_latency():
 | ID | タイトル | 完了日 | コミット |
 |---|---|---|---|
 | TASK-009 | B-6監査ログの強化 | 2026-05-05 | 5bc4c48 |
+| TASK-010 | Firestore _mark_aborted トランザクション化 | 2026-05-11 | 1511a7d |
 | TASK-006 | clarification文脈引き継ぎ・退去解約取りこぼし対策 | 2026-05-05 | fce8e9d |
 | - | Cloud Run hardening Phase 1-3〜2-3 | 2026-05-11 | 48a4ac8 |
 | - | AGENTS.md 作成 | 2026-05-05 | - |
