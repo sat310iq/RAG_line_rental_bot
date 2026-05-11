@@ -228,3 +228,78 @@ def test_kb_fast_path_short_term_penalty_hit(cfg):
             amount in (r.text or "")
             for amount in ["114,600", "76,400", "38,200"]
         ), f"金額が answer に含まれない: {r.text}"
+
+
+# ---------------------------------------------------------------------------
+# TASK-008: 9 newly enabled intents — fast path coverage regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestTask008NewIntents:
+    """Verify that the 9 intents enabled in TASK-008 return fast-path hits."""
+
+    def _hit(self, cfg, docs, query: str, expected_intent: str) -> None:
+        r = try_kb_fast_path(query, cfg, docs)
+        assert r.kind == "hit", f"expected hit for {query!r}, got kind={r.kind}"
+        assert r.intent == expected_intent, (
+            f"intent mismatch for {query!r}: got={r.intent!r}, want={expected_intent!r}"
+        )
+        assert r.text, f"answer text is empty for {query!r}"
+
+    def test_suspicious_person_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "不審者を見かけました", "防犯_不審者")
+        self._hit(cfg, docs, "怪しい人物が歩き回っています", "防犯_不審者")
+
+    def test_pet_policy_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "犬を飼ってもいいですか", "ペット飼育の可否")
+        self._hit(cfg, docs, "ペット可ですか？", "ペット飼育の可否")
+        self._hit(cfg, docs, "猫を飼育したいのですが", "ペット飼育の可否")
+
+    def test_fire_alarm_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "火災警報器が鳴っています", "設備_火災警報")
+        self._hit(cfg, docs, "煙感知器が反応しています", "設備_火災警報")
+
+    def test_common_area_lighting_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "廊下の電気が切れています", "設備_共用部照明")
+        self._hit(cfg, docs, "共用部の照明が消えています", "設備_共用部照明")
+        self._hit(cfg, docs, "玄関の照明がチカチカしています", "設備_共用部照明")
+
+    def test_common_area_lighting_no_false_hit_on_denki(self, cfg):
+        """'電気' alone should NOT hit 設備_共用部照明 (would beat 生活_電気)."""
+        docs = load_kb_csv(cfg)
+        r = try_kb_fast_path("電気", cfg, docs)
+        assert r.intent != "設備_共用部照明", (
+            f"False hit: '電気' should not resolve to 設備_共用部照明, got {r.intent!r}"
+        )
+
+    def test_garbage_rule_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "ゴミ出しの曜日を教えてください", "ゴミ出し_ルール")
+        self._hit(cfg, docs, "燃えるゴミはいつ出せますか", "ゴミ出し_ルール")
+        self._hit(cfg, docs, "ゴミの分別方法を教えてください", "ゴミ出し_ルール")
+
+    def test_garbage_station_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "ゴミステーションが散らかっています", "ゴミステーション_共用部")
+        self._hit(cfg, docs, "ゴミ置き場が汚いです", "ゴミステーション_共用部")
+
+    def test_restoration_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "退去時の原状回復の費用は誰が負担しますか", "契約_原状回復")
+        self._hit(cfg, docs, "経年劣化は借主負担ですか", "契約_原状回復")
+        self._hit(cfg, docs, "通常損耗は借主負担になりますか", "契約_原状回復")
+
+    def test_parking_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "駐車場の利用方法を教えてください", "駐車場_利用")
+        self._hit(cfg, docs, "駐車場の番号はどこで確認できますか", "駐車場_利用")
+
+    def test_management_contact_hit(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "管理会社の電話番号を教えてください", "管理会社_連絡先")
+        self._hit(cfg, docs, "To Youの連絡先を教えてください", "管理会社_連絡先")
+        self._hit(cfg, docs, "0978の電話番号はどこですか", "管理会社_連絡先")
