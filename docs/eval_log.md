@@ -149,6 +149,8 @@
 
 **注:** 3件（鍵/ガス/停電）は miss→clarification（KB 応答、フォールバックではない）。`needs_clarification_when_short=true` かつ len≤10 のため。実 Fallback Rate は次回 eval で計測要。
 
+> ※ 14.5% は代表62クエリのシミュレーション推定値。本番eval（OpenAIキー設定後）で確定予定。
+
 ---
 
 ## P1タスク完了確認｜2026-05-12（rental_rag_poc-340, rental_rag_poc-c9c）
