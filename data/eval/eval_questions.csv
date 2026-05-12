@@ -1,6 +1,6 @@
 question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_ids,expected_answer,notes,question_type
 退去時の原状回復の基本方針は？,deal,deal,契約_原状回復,restoration,原状回復は借主の責任で行う必要があります,Deal CSVから回答,explanation
-原状回復の費用負担と契約条項の関係は？,multi,"deal,master",FAQ002 contract.pdf p12,"契約_原状回復,グランマーレ大分空港契約書.txt p1",原状回復の費用負担と契約条項の関係について説明します,複数ソース統合,explanation
+原状回復の費用負担と契約条項の関係は？,multi,"deal,master",FAQ002 contract.pdf p12,グランマーレ大分空港契約書.txt p1,原状回復の費用負担と契約条項の関係について説明します,複数ソース統合,explanation
 ペット飼育の可否と条件は？,master,master,contract.pdf p8,ペット飼育の可否,ペットの飼育は禁止されています,Deal CSVから回答（intent値を使用）,policy_confirmation
 鍵の紛失時の対応は？,deal,deal,鍵_紛失,鍵_紛失,鍵の紛失時の対応手順を説明します,Deal CSVから回答（intent値を使用）,procedure
 駐車場の利用ルールは？,deal,deal,駐車場_利用,parking,契約書に基づき指定された駐車場1台分を使用する旨と、詳細は管理会社に確認することを回答内容として含む,FAQ KB（駐車場_利用）,fact_lookup
