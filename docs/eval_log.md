@@ -119,8 +119,35 @@
 | 契約書_場所質問 | 原状回復のルールはどこに書いてある？ | "どこに書いてある"がprimary未ヒット |
 
 ### 次スプリント改善候補
-- **最優先:** 活用形不一致問題（BACKLOG化）— "動きません/壊れました" 等の `-ます`/`-ました` 語尾に対応する secondary キーワード整備
-- 仮説: 頻出16ミスの上位5件に secondary を追加するだけで Fallback Rate を 20% 以下に抑えられる見込み
+- ~~**最優先:** 活用形不一致問題~~（→ 2026-05-12 対処済み、以下参照）
+- 仮説: 頻出16ミスの上位5件に secondary を追加するだけで Fallback Rate を 20% 以下に抑えられる見込み → **検証済み（96919b5）**
+
+---
+
+## 活用形修正後の推定値｜2026-05-12（コミット 96919b5）
+
+> 62クエリシミュレーションをベースに、7インテント×代表クエリの miss→non-miss 変化を確認。
+
+### 変更内容
+
+| intent | 変更 | 追加キーワード | 効果 |
+|---|---|---|---|
+| 鍵_紛失 | secondary | なくしました | miss→clarification |
+| 設備_エアコン | secondary | 動きません\|壊れました | miss→hit |
+| 設備_ガス故障 | secondary | 壊れました\|動きません | miss→clarification |
+| 設備_停電 | secondary | 発生 | miss→clarification |
+| 契約_家賃減額 | primary+secondary | 減額 / 家賃 | miss→hit |
+| 契約_無断同居 | primary | 住まわせ | miss→hit |
+| 管理会社_連絡先 | secondary | 連絡 | miss→hit |
+
+### 推定フォールバック率
+
+| 状態 | miss 数 | Fallback Rate | 目標 |
+|---|---|---|---|
+| TASK-008後（9インテント有効化） | 16/62 | **26%** | — |
+| 活用形修正後（7クエリ修正） | 9/62 | **~14.5%** | < 20% ✅ |
+
+**注:** 3件（鍵/ガス/停電）は miss→clarification（KB 応答、フォールバックではない）。`needs_clarification_when_short=true` かつ len≤10 のため。実 Fallback Rate は次回 eval で計測要。
 
 ---
 

@@ -300,6 +300,7 @@ def test_hot_path_p95_latency():
 | TASK-008 | faq_kb.csv 9インテント有効化・キーワード整備 | 2026-05-12 | e1300ea |
 | rental_rag_poc-340 | 検索精度改善 Recall@5 0.941（目標0.50+達成）・Q002 eval CSV修正 | 2026-05-12 | 107d88e |
 | rental_rag_poc-c9c | ハルシネーション率 0.0%（目標≤50%達成）・契約条項ルーター追加 | 2026-05-12 | 107d88e |
+| - | KB 活用形修正 Fallback Rate 26%→~14.5% | 2026-05-12 | 96919b5 |
 | TASK-006 | clarification文脈引き継ぎ・退去解約取りこぼし対策 | 2026-05-05 | fce8e9d |
 | - | Cloud Run hardening Phase 1-3〜2-3 | 2026-05-11 | 48a4ac8 |
 | - | AGENTS.md 作成 | 2026-05-05 | - |
