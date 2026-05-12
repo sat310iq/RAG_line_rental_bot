@@ -303,3 +303,54 @@ class TestTask008NewIntents:
         self._hit(cfg, docs, "管理会社の電話番号を教えてください", "管理会社_連絡先")
         self._hit(cfg, docs, "To Youの連絡先を教えてください", "管理会社_連絡先")
         self._hit(cfg, docs, "0978の電話番号はどこですか", "管理会社_連絡先")
+
+
+class TestFallbackRateReduction:
+    """活用形不一致で miss だった7クエリが KB fast path（hit or clarification）に到達することを確認。
+
+    short query (len≤10) + needs_clarification_when_short=true → clarification（miss ではない）
+    longer query or needs_clarification_when_short=false → hit
+    いずれも fallback（miss）ではなくなることが目標。
+    """
+
+    def _not_miss(self, cfg, docs, q: str, expected_intent: str) -> None:
+        r = try_kb_fast_path(q, cfg, docs)
+        assert r.kind != "miss", f"Expected non-miss for '{q}', got miss"
+        assert r.intent == expected_intent, f"Intent mismatch: got {r.intent}"
+
+    def _hit(self, cfg, docs, q: str, expected_intent: str) -> None:
+        r = try_kb_fast_path(q, cfg, docs)
+        assert r.kind == "hit", f"Expected hit for '{q}', got {r.kind} (intent={r.intent})"
+        assert r.intent == expected_intent, f"Intent mismatch: got {r.intent}"
+
+    def test_key_lost_polite(self, cfg):
+        # len=8 ≤ short_max_len=10, needs_clarification_when_short=true → clarification
+        docs = load_kb_csv(cfg)
+        self._not_miss(cfg, docs, "鍵をなくしました", "鍵_紛失")
+
+    def test_ac_not_working_polite(self, cfg):
+        # len=10, needs_clarification_when_short=false → hit
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "エアコンが動きません", "設備_エアコン")
+
+    def test_water_heater_broken_polite(self, cfg):
+        # len=9 ≤ short_max_len=10, needs_clarification_when_short=true → clarification
+        docs = load_kb_csv(cfg)
+        self._not_miss(cfg, docs, "給湯器が壊れました", "設備_ガス故障")
+
+    def test_power_outage_occurring(self, cfg):
+        # len=10 ≤ short_max_len=10, needs_clarification_when_short=true → clarification
+        docs = load_kb_csv(cfg)
+        self._not_miss(cfg, docs, "停電が発生しています", "設備_停電")
+
+    def test_rent_reduction_request(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "家賃を減額してほしいのですが", "契約_家賃減額")
+
+    def test_cohabitation_request(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "家族を住まわせてもいいですか", "契約_無断同居")
+
+    def test_management_contact_polite(self, cfg):
+        docs = load_kb_csv(cfg)
+        self._hit(cfg, docs, "To Youに連絡したいのですが", "管理会社_連絡先")
