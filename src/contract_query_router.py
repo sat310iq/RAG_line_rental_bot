@@ -19,6 +19,7 @@ _RE_HONBUN_ARTICLE = re.compile(r"本文第\s*\d+\s*条")
 _RE_REIKAI = re.compile(r"例外特約")
 _RE_TAIKYO_CLEAN = re.compile(r"退去時クリーニング")
 _RE_NENCHU = re.compile(r"経過年数")
+_RE_KEIYAKU_JOKO = re.compile(r"契約条項")
 _RE_USAGE_PURPOSE = re.compile(r"(使用目的|居住目的|居住のみを目的|用途)")
 _RE_IMPORTANT_MATTERS_DOC = re.compile(r"重要事項説明書")
 _RE_JUSETSU = re.compile(r"重説")
@@ -76,6 +77,12 @@ def is_contract_source_question(
     # 契約書 + 記載系（「契約書」単独は不可）
     if "契約書" in q and any(
         x in q for x in ("記載", "書いて", "書かれ", "定め", "規定")
+    ):
+        return True
+
+    # 契約条項 + 内容・関係を問う（契約書本文の条項そのものを尋ねる）
+    if _RE_KEIYAKU_JOKO.search(q) and any(
+        x in q for x in ("記載", "書いて", "書かれ", "定め", "規定", "内容", "関係", "について")
     ):
         return True
 

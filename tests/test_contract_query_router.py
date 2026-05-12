@@ -36,6 +36,11 @@ from src.contract_query_router import (
         ("この契約の使用目的は何ですか", True),
         ("契約上の用途を教えてください", True),
         ("契約の更新だけしたいです", False),
+        # 契約条項 + 内容・関係
+        ("原状回復の費用負担と契約条項の関係は？", True),
+        ("契約条項の内容について教えてください", True),
+        ("契約条項はどのように定められていますか", True),
+        ("契約条項", False),  # 単独では不可
     ],
 )
 def test_is_contract_source_question(q: str, expected: bool) -> None:
