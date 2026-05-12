@@ -124,6 +124,39 @@
 
 ---
 
+## P1タスク完了確認｜2026-05-12（rental_rag_poc-340, rental_rag_poc-c9c）
+
+> Beads P1タスク2件（Recall@5改善・ハルシネーション率改善）のクローズ確認。最終 eval 実行: 2026-05-02。
+
+### Metrics v2 評価結果（2026-05-02 eval, 17問）
+
+| 指標 | 計測値 | タスク目標 | 判定 |
+|---|---|---|---|
+| Recall@5（normalized） | **0.941** | ≥ 0.50 | ✅ |
+| Recall@5（strict） | 0.118 | — | 参考値 |
+| hallucination_fact_error | **0.0** | 0.0必須 | ✅ |
+| hallucination_unsourced_claim | **0.0** | — | ✅ |
+| hallucination_overreach | **0.0** | — | ✅ |
+| hallucination（= 1 - max(above)） | **1.0** | ≥ 0.50 | ✅ |
+| miss（recall@5=0.0 の質問数） | **1件**（Q002） | — | ⚠️ |
+
+### Q002 残存 miss の原因と対処
+
+| 項目 | 内容 |
+|---|---|
+| 質問 | 原状回復の費用負担と契約条項の関係は？ |
+| 原因① | `relevant_doc_ids` がスペース区切り → コンマ区切りに修正（107d88e） |
+| 原因② | 期待ID形式 `.pdf p12` が誤り → `.txt p1` に修正（107d88e） |
+| 原因③ | `is_contract_source_question` が「契約条項」を認識せず master TXT 未検索 → ルーター追加（107d88e） |
+
+### 変更ファイル（コミット 107d88e）
+
+- `src/contract_query_router.py`: 契約条項メタ質問トリガー追加
+- `data/eval/eval_questions.csv`: Q002 relevant_doc_ids 修正
+- `tests/test_contract_query_router.py`: テスト4件追加
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する
