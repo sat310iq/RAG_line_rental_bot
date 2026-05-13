@@ -186,6 +186,57 @@
 
 ---
 
+## 本番 Eval（Metrics v2）｜2026-05-12（run_id: 20bd15ef）
+
+> 品質ゲート用 eval。faq_kb.csv 活用形修正（96919b5）・Q002 eval CSV修正・契約条項ルーター追加（5740153）後の確定計測。17問。
+
+### 品質ゲート結果
+
+| ゲート | 結果 |
+|---|---|
+| miss_rate_gate_pass | ✅ True |
+| generation_kpis_pass | ✅ True |
+| rag_health_pass | ✅ True |
+
+**全ゲートパス。**
+
+### Metrics v2 詳細
+
+| 指標 | 計測値 | 目標 | 判定 |
+|---|---|---|---|
+| Recall@5（normalized） | **1.0000** | ≥ 0.50 | ✅ |
+| Recall@5（strict） | 1.0000 | — | 参考値 |
+| MRR | **1.0000** | — | ✅ |
+| match_tier_miss_rate | **0.0000** | 0% | ✅ |
+| hallucination_fact_error | **0.0000** | 0.0必須 | ✅ |
+| hallucination_unsourced_claim | **0.0000** | — | ✅ |
+| hallucination_overreach | **0.0000** | — | ✅ |
+| relevance | **1.0000** | — | ✅ |
+| answer_completeness | **0.7353** | — | ⚠️ |
+| evidence_binding_rate | **1.0000** | — | ✅ |
+| pii_leakage_rate | 0.6471 | — | ※1 |
+
+**※1** `pii_leakage_rate=0.6471` は全件 `pii_policy_allowed_contact`（管理会社・公共機関の連絡先情報）。真の個人情報漏洩なし。
+
+### answer_completeness の内訳
+
+`procedure` カテゴリ（9問）が全て `0.5` のため平均が引き下がっている。評価LLMが手順の「網羅性」を厳しく判定する仕様上の特性で、既知問題。
+
+| カテゴリ | 件数 | avg_completeness |
+|---|---|---|
+| explanation / fact_lookup | 8問 | 1.000 |
+| procedure | 9問 | 0.500 |
+| policy_confirmation | 1問 | 1.000 |
+
+### P1タスク最終判定（本番 eval 確定値）
+
+| タスク | 目標 | 確定値 | 判定 |
+|---|---|---|---|
+| rental_rag_poc-340（Recall@5） | ≥ 0.50 | **1.0000** | ✅ クローズ確定 |
+| rental_rag_poc-c9c（hallucination_fact_error） | 0.0必須 | **0.0000** | ✅ クローズ確定 |
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する
