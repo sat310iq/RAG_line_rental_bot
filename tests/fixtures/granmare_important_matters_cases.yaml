@@ -29,8 +29,8 @@ cases:
     question: >-
       重要事項説明書の契約期間はいつからいつまでですか。
     expected_snippets:
-      - "2026年03月15日"
-      - "2028年03月14日"
+      - "更新時に更新料として新賃料の0ヵ月分"
+      - "法定更新時も同様"
 
   - id: juyo_tokuyaku_04
     group: 重要事項説明書
@@ -101,7 +101,7 @@ cases:
     question: >-
       重要事項説明書の登記簿事項では所有権以外の権利は何と記載されていますか。
     expected_snippets:
-      - "根抵当権"
+      - "競落人"
       - "抵当権補足説明"
 
   - id: juyo_insurance

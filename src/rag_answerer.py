@@ -842,7 +842,7 @@ class RAGAnswerer:
 
     def _contract_source_not_found_answer(self, question: str) -> AnswerSchema:
         """No contract (master) evidence: short answer, no FAQ evidence IDs."""
-        msg = "契約書（根拠情報）内では確認できません。"
+        msg = "契約書・重要事項説明書（根拠情報）内では確認できません。"
         return AnswerSchema(
             items=[AnswerItem(text=msg, citation="contract_source_not_found")],
             summary=msg,
