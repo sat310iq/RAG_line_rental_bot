@@ -297,9 +297,9 @@ def test_hot_path_p95_latency():
 
 | ID | タイトル | 完了日 | コミット | 見積 | 実績時間 | Token見積 | Token実績 |
 |---|---|---|---|---|---|---|---|
-| TASK-003 | research.md 整備（ChromaDB修正・新規エントリ追加・OQ-001解決） | 2026-05-17 | — | 30分 | 20分 | ~35K (S) | ~50K |
-| TASK-002 | パフォーマンステスト基盤整備（tests/performance/test_latency.py） | 2026-05-17 | — | 60分 | 15分 | ~50K (S) | ~40K |
-| TASK-001 | Eval基盤の統一（eval_log.md整備・evalファイルリンク追加） | 2026-05-17 | — | 30分 | 10分 | ~30K (XS) | ~25K |
+| TASK-003 | research.md 整備（ChromaDB修正・新規エントリ追加・OQ-001解決） | 2026-05-17 | 327686c | 30分 | 20分 | ~35K (S) | ~50K |
+| TASK-002 | パフォーマンステスト基盤整備（tests/performance/test_latency.py） | 2026-05-17 | 327686c | 60分 | 15分 | ~50K (S) | ~40K |
+| TASK-001 | Eval基盤の統一（eval_log.md整備・evalファイルリンク追加） | 2026-05-17 | 327686c | 30分 | 10分 | ~30K (XS) | ~25K |
 | TASK-009 | B-6監査ログの強化 | 2026-05-05 | 5bc4c48 | 45分 | — | — | — |
 | TASK-007 | 検索タイムアウト対策（3→10s, print→logger） | 2026-05-11 | a15e470 | 60分 | — | — | — |
 | TASK-010 | Firestore _mark_aborted トランザクション化 | 2026-05-11 | 1511a7d | 45〜60分 | — | — | — |
