@@ -73,6 +73,7 @@ data/eval/*.json
 # Beads - Note: .beads/ should be tracked by Git (contains task data)
 # Do NOT ignore .beads/
 .beads/daemon.log
+.beads/interactions.jsonl
 
 # Local-only helper script overrides (optional)
 scripts/*.local.sh
