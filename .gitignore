@@ -100,3 +100,7 @@ data/eval/smoke_miss_summary.md
 # Docker local config
 .dockerignore
 .gcloudignore
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
