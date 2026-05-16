@@ -25,7 +25,7 @@ _RE_IMPORTANT_MATTERS_DOC = re.compile(r"重要事項説明書")
 _RE_JUSETSU = re.compile(r"重説")
 _RE_JUYO_SECTION = re.compile(r"重要事項[^\n]{0,40}の\s*[0-9０-９一二三四五六七八九十]+[\.．]")
 _RE_SECTION_NUM_JUYO = re.compile(r"重要事項[^\n]{0,48}の\s*([0-9０-９]+)")
-_RE_SECTION_NUM_BARE = re.compile(r"(?:^|[\s、,])([0-9０-９]+)\s*番")
+_RE_SECTION_NUM_BARE = re.compile(r"(?:^|[\s、,の])([0-9０-９]+)\s*番")
 
 IMPORTANT_MATTERS_HINTS: tuple[str, ...] = (
     "重要事項",
