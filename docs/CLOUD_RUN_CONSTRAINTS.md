@@ -15,6 +15,7 @@
 - **PORT**: Cloud Run が注入する `PORT`（通常 8080）で listen する。
 - **Cold start**: 初回リクエストが遅延しうる。`/health` と `/ready` でプロセスと RAG 準備を分離して監視する。
 - **メモリ / CPU / タイムアウト**: RAG + Chroma + LLM はメモリを使う。必要に応じて Cloud Run の上限とクライアント側タイムアウトを調整する。
+- **ChromaDB 検索タイムアウト** (`RAG_SEARCH_TIMEOUT_SEC`): warm インスタンスでも最大 5〜7s かかることを実測したため **10s** を採用（旧値 3s は不足）。Cloud Run リクエストタイムアウト 60s に対して十分な余裕あり。詳細は `docs/research.md`「rag_search_timeout_sec 3s → 10s への変更根拠」を参照。
 
 ## パス解決
 

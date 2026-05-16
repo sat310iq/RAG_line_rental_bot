@@ -35,10 +35,11 @@
 
 ### [TASK-001] Eval基盤の統一
 
-**ステータス:** `[ ]`  
+**ステータス:** `[x]`  
 **依存:** LINEテスト完了  
 **スコープ:** `docs/eval_log.md`（新規作成）  
-**見積:** 30分
+**見積:** 30分 / ~30K tokens（XS〜S: ドキュメント数ファイル読み取り＋リンク追記）  
+**実績:** 10分 / ~25K tokens（ファイルは既存済み。不足していた evalリンク追加・PT-001採点・kanban更新のみ）
 
 **実装内容:**
 - `docs/eval/`・`forecast_log.md` など分散したeval記録を `docs/eval_log.md` に統一
@@ -68,10 +69,11 @@
 
 ### [TASK-002] Performance Test基盤整備
 
-**ステータス:** `[ ]`  
+**ステータス:** `[x]`  
 **依存:** TASK-001  
 **スコープ:** `tests/performance/`（新規ディレクトリ）  
-**見積:** 60分
+**見積:** 60分 / ~50K tokens（S: ソースファイル8本読み取り＋テスト実装＋linter＋pytest実行）  
+**実績:** 15分 / ~40K tokens（テスト設計・実装52行・ruff確認・pytest実行 0.08s グリーン確認）
 
 **実装内容:**
 - `tests/performance/` ディレクトリ作成
@@ -103,10 +105,11 @@ def test_hot_path_p95_latency():
 
 ### [TASK-003] research.md 初期作成
 
-**ステータス:** `[ ]`  
+**ステータス:** `[x]`  
 **依存:** なし（TASK-001と並行可）  
 **スコープ:** `docs/research.md`（新規作成）  
-**見積:** 30分
+**見積:** 30分 / ~35K tokens（S: config・query_cache等ソース数本読み取り＋ドキュメント編集）  
+**実績:** 20分 / ~50K tokens（既存エントリ確認にファイル読み取りが予想より多く、S上限に近い）
 
 **実装内容:**
 - `docs/research.md` を新規作成
@@ -131,9 +134,9 @@ def test_hot_path_p95_latency():
 ```
 
 **完了条件:**
-- [ ] `docs/research.md` 作成済み
-- [ ] 初期エントリ3件以上記録
-- [ ] Prompt C（Research Agent）の出力先として使える状態
+- [x] `docs/research.md` 作成済み
+- [x] 初期エントリ3件以上記録
+- [x] Prompt C（Research Agent）の出力先として使える状態
 
 **Escalationトリガー:** なし
 
@@ -170,7 +173,7 @@ def test_hot_path_p95_latency():
 **ステータス:** `[ ]`  
 **依存:** LINEテスト完了 + TASK-001〜003  
 **スコープ:** TBD  
-**見積:** TBD
+**見積:** TBD / TBD tokens（スコープ確定後に再見積もり）
 
 > Prompt D に以下を渡して生成：
 > ```
@@ -183,19 +186,19 @@ def test_hot_path_p95_latency():
 
 > 将来的に対応する可能性があるタスク。優先度未決定。
 
-| ID | タイトル | 理由 |
-|---|---|---|
-| BACKLOG-001 | needs_clarification 閾値チューニング | Eval結果次第 |
-| BACKLOG-002 | Semantic Cache ヒット率改善 | Eval結果次第 |
-| BACKLOG-003 | RAG正答率のeval set整備 | 品質基準の定量化 |
-| BACKLOG-004 | ADR-002 作成（次の設計変更時） | 変更発生時 |
+| ID | タイトル | 理由 | 時間見積 | Token見積 |
+|---|---|---|---|---|
+| BACKLOG-001 | needs_clarification 閾値チューニング | Eval結果次第 | 60〜90分 | ~80K (M): kb_fast_path・eval実行・閾値パラメータ探索 |
+| BACKLOG-002 | Semantic Cache ヒット率改善 | Eval結果次第 | 60分 | ~70K (M): query_cache読み取り・閾値/TTL調整・eval検証 |
+| BACKLOG-003 | RAG正答率のeval set整備 | 品質基準の定量化 | 90〜120分 | ~120K (L): eval CSV全件確認＋LLM採点実行ログ読み取り |
+| BACKLOG-004 | ADR-002 作成（次の設計変更時） | 変更発生時 | 20分 | ~20K (XS): docs編集のみ |
 
 ### [TASK-005] 既存コードのlint・型エラー解消
 
 **ステータス:** `[ ]`  
 **依存:** なし（LINEテストと並行可）  
 **スコープ:** `src/` `tests/` 配下の既存エラー  
-**見積:** 60〜90分
+**見積:** 60〜90分 / ~120K tokens（L: src/30本・tests/40本の全読み取り＋iterative編集＋linter反復実行。ruff自動修正で減る可能性あり）
 
 **実装内容:**
 - `ruff check src/ tests/` のエラーを解消
@@ -292,21 +295,20 @@ def test_hot_path_p95_latency():
 
 ## Done
 
-| ID | タイトル | 完了日 | コミット |
-|---|---|---|---|
-| TASK-009 | B-6監査ログの強化 | 2026-05-05 | 5bc4c48 |
-| TASK-007 | 検索タイムアウト対策（3→10s, print→logger） | 2026-05-11 | a15e470 |
-| TASK-010 | Firestore _mark_aborted トランザクション化 | 2026-05-11 | 1511a7d |
-| TASK-008 | faq_kb.csv 9インテント有効化・キーワード整備 | 2026-05-12 | e1300ea |
-| rental_rag_poc-340 | 検索精度改善 Recall@5 0.941（目標0.50+達成）・Q002 eval CSV修正 | 2026-05-12 | 107d88e |
-| rental_rag_poc-c9c | ハルシネーション率 0.0%（目標≤50%達成）・契約条項ルーター追加 | 2026-05-12 | 107d88e |
-| - | KB 活用形修正 Fallback Rate 26%→~14.5% | 2026-05-12 | 96919b5 |
-| TASK-006 | clarification文脈引き継ぎ・退去解約取りこぼし対策 | 2026-05-05 | fce8e9d |
-| - | Cloud Run hardening Phase 1-3〜2-3 | 2026-05-11 | 48a4ac8 |
-| - | AGENTS.md 作成 | 2026-05-05 | - |
-| - | FRAMEWORK v2 作成 | 2026-05-05 | - |
-| - | CURSOR_PROMPTS 作成 | 2026-05-05 | - |
-| - | .cursor/rules 設置 | 2026-05-05 | - |
+| ID | タイトル | 完了日 | コミット | 見積 | 実績時間 | Token見積 | Token実績 |
+|---|---|---|---|---|---|---|---|
+| TASK-003 | research.md 整備（ChromaDB修正・新規エントリ追加・OQ-001解決） | 2026-05-17 | — | 30分 | 20分 | ~35K (S) | ~50K |
+| TASK-002 | パフォーマンステスト基盤整備（tests/performance/test_latency.py） | 2026-05-17 | — | 60分 | 15分 | ~50K (S) | ~40K |
+| TASK-001 | Eval基盤の統一（eval_log.md整備・evalファイルリンク追加） | 2026-05-17 | — | 30分 | 10分 | ~30K (XS) | ~25K |
+| TASK-009 | B-6監査ログの強化 | 2026-05-05 | 5bc4c48 | 45分 | — | — | — |
+| TASK-007 | 検索タイムアウト対策（3→10s, print→logger） | 2026-05-11 | a15e470 | 60分 | — | — | — |
+| TASK-010 | Firestore _mark_aborted トランザクション化 | 2026-05-11 | 1511a7d | 45〜60分 | — | — | — |
+| TASK-008 | faq_kb.csv 9インテント有効化・キーワード整備 | 2026-05-12 | e1300ea | 60〜90分 | — | — | — |
+| rental_rag_poc-340 | 検索精度改善 Recall@5 0.941（目標0.50+達成）・Q002 eval CSV修正 | 2026-05-12 | 107d88e | — | — | — | — |
+| rental_rag_poc-c9c | ハルシネーション率 0.0%（目標≤50%達成）・契約条項ルーター追加 | 2026-05-12 | 107d88e | — | — | — | — |
+| - | KB 活用形修正 Fallback Rate 26%→~14.5% | 2026-05-12 | 96919b5 | — | — | — | — |
+| TASK-006 | clarification文脈引き継ぎ・退去解約取りこぼし対策 | 2026-05-05 | fce8e9d | 45〜60分 | — | — | — |
+| - | Cloud Run hardening Phase 1-3〜2-3 | 2026-05-11 | 48a4ac8 | — | — | — | — |
 
 ---
 
@@ -329,3 +331,21 @@ def test_hot_path_p95_latency():
 4. Escalation時：ステータスを [!] にして Escalation Log に記録
 5. Sprint終了時：docs/eval_log.md に指標を記録する
 ```
+
+### Token見積もりガイド
+
+Token数 = セッション全体の入力（ファイル読み取り・ツール結果・会話履歴）＋ 出力（応答・編集）の合計。
+CLAUDE.md + AGENTS.md だけで常時 ~6K tokens のベースオーバーヘッドがある。
+
+| 区分 | 目安 | 該当タスク例 |
+|---|---|---|
+| XS（小） | ~15-30K | ドキュメント1ファイル編集、短い追記 |
+| S（小〜中） | ~30-60K | テスト実装、小規模コード修正 |
+| M（中） | ~60-100K | 複数ファイル横断修正、ルーティング改善 |
+| L（大） | ~100-200K | 全ファイルlint、大規模リファクタ、eval分析 |
+| XL（超大） | ~200K+ | 設計変更・新機能追加（RAG新戦略等） |
+
+**Token見積もりの考え方（タスク着手前）:**
+- 読む必要があるファイル数 × 平均ファイルサイズ（~2K tokens/file）
+- 書くコード量 × 1.5（出力は入力換算でコスト低）
+- 反復確認（テスト実行・linter）が多いほど入力トークンが増える

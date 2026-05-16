@@ -57,7 +57,7 @@ CHECKLIST の「事前確認」チェックボックス群を、次の **6 項�
 
 ### 6. 依存基盤およびテスト用 LINE
 
-- CHECKLIST 記載のとおり: **Semantic Cache（Redis）起動中**、**FAISS インデックスがロード済み**（Cloud Run 上の想定含む）、**テスト用 LINE アカウントで Bot が友だち追加済み**。
+- CHECKLIST 記載のとおり: **Semantic Cache（Redis）起動中**、**ChromaDB インデックスがロード済み**（Cloud Run 上の想定含む）、**テスト用 LINE アカウントで Bot が友だち追加済み**。
 - オペレータ確認: 「上記 3 点が揃っているか」
 
 **事前確認ブロック完了の宣言文（例）**  

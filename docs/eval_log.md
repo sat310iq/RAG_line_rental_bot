@@ -5,9 +5,25 @@
 ---
 
 ## 関連ファイル
+
+### Eval系（直接参照）
+- `docs/eval/README.md` — eval二系統（品質ゲート / ルーティング検証）の使い分け
+- `docs/eval/forecast_log.md` — 精度改善施策の予測精度記録（Brier Score）
+- `docs/eval/PHASE2_FINAL_REPORT.md` — Phase 2 Cloud Run本番化の最終レポート
+- `docs/eval/RAG_POC_IMPROVEMENT_REPORT.md` — RAG精度改善の詳細レポート
+- `docs/eval/RAG_ROUTING_AND_AB_REDESIGN.md` — ルーティング・A/B設計の変更履歴
+- `docs/eval/LOCAL_RUN_LINE_RAG_EVAL_V1_TABLE.md` — ローカルeval結果テーブル（v1）
+
+### 計測データ（最新）
+- `data/eval/eval_metrics.json` — 品質ゲート用集計メトリクス（run_simple_eval.py出力）
+- `data/eval/ab_summary.json` — A/Bルーティング比較結果
+- `data/eval/ab_scored_summary.json` — スコアリング済みA/B結果
+
+### プロジェクト管理
 - `docs/kanban.md` — タスク管理
 - `docs/research.md` — 技術調査蓄積
 - `docs/decisions/` — ADR置き場
+- `docs/QUALITY_GATE.md` — Ship/No Ship 閾値定義
 
 ---
 
