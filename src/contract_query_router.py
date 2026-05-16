@@ -22,6 +22,8 @@ _RE_NENCHU = re.compile(r"経過年数")
 _RE_KEIYAKU_JOKO = re.compile(r"契約条項")
 _RE_USAGE_PURPOSE = re.compile(r"(使用目的|居住目的|居住のみを目的|用途)")
 _RE_IMPORTANT_MATTERS_DOC = re.compile(r"重要事項説明書")
+# 「重」抜けタイポ（要事項説明書）をフォールバックとして許容
+_RE_JUYO_SETSUMEISHO_TYPO = re.compile(r"要事項説明書")
 _RE_JUSETSU = re.compile(r"重説")
 _RE_JUYO_SECTION = re.compile(r"重要事項[^\n]{0,40}の\s*[0-9０-９一二三四五六七八九十]+[\.．]")
 _RE_SECTION_NUM_JUYO = re.compile(r"重要事項[^\n]{0,48}の\s*([0-9０-９]+)")
@@ -99,6 +101,9 @@ def is_contract_source_question(
     if _RE_JUSETSU.search(q):
         return True
     if "重要事項" in q and "説明書" in q:
+        return True
+    # 「重」抜けタイポ（要事項説明書）でもマスター参照として扱う
+    if _RE_JUYO_SETSUMEISHO_TYPO.search(q):
         return True
     if "重要事項" in q and any(
         m in q

@@ -73,6 +73,8 @@ def test_extract_important_matters_section_id(question: str, expected_section: s
         ("抵当権が実行されたらどうなる？", False),
         # 一般相談
         ("契約更新したいです", False),
+        # 「重」抜けタイポ（要事項説明書）もマスター参照として扱う
+        ("要事項説明書の3番では家賃はいくらですか", True),
     ],
 )
 def test_is_contract_source_question_for_juyo(question: str, expected_contract_source: bool) -> None:
