@@ -309,6 +309,14 @@ def evaluate_question(
             # Generation quality aux (Phase 2)
             "template_only": is_template_only_response(answer.summary or ""),
             "intent_aligned": compute_intent_alignment(answer),
+            # Routing observability (AIT-MET-01/02)
+            "decision_path": getattr(answer, "decision_path", None),
+            "latency_ms": getattr(answer, "latency_ms", None),
+            "contract_source_q": bool(getattr(answer, "contract_source_q", False)),
+            "input_tokens_est": (
+                (getattr(answer, "search_debug_info", None) or {}).get("llm_evidence_token_estimate", 0)
+                + max(1, len(question) // 4)
+            ),
         }
         return result
         

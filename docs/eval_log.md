@@ -253,6 +253,56 @@
 
 ---
 
+## AIT-MET-02: 経路別ルーティング集計｜2026-05-17（実装完了・次回 eval で計測）
+
+> commit: （次コミット）。`src/evaluate.py` と `scripts/run_simple_eval.py` に経路別集計を追加。
+
+### 追加フィールド（`data/eval/eval_metrics.json` — 次回 eval 実行後に反映）
+
+| フィールド | 内容 |
+|---|---|
+| `routing_breakdown` | decision_path 別の件数・割合（contract_source_rag / rag / direct / clarification / escalation 等） |
+| `latency_p50_ms` | 全質問の応答 p50 |
+| `latency_p95_ms` | 全質問の応答 p95 |
+| `contract_rag_latency_p50_ms` | 契約ソース RAG 質問の p50 |
+| `contract_rag_latency_p95_ms` | 契約ソース RAG 質問の p95 |
+| `contract_rag_input_tokens_avg` | 契約ソース RAG の入力トークン推定 平均 |
+| `contract_rag_input_tokens_p95` | 契約ソース RAG の入力トークン推定 p95 |
+
+### 計測手順（AIT-MET-01 / AIT-MET-02 共通）
+
+```bash
+# キャッシュ無効・全17問実行
+.venv/bin/python scripts/run_simple_eval.py --mode full
+
+# 結果確認
+python3 -c "
+import json
+m = json.load(open('data/eval/eval_metrics.json'))['aggregate_metrics']
+print('=== Routing Breakdown ===')
+for p, v in m.get('routing_breakdown', {}).items():
+    print(f'  {p}: {v[\"count\"]}件 ({v[\"rate\"]*100:.1f}%)')
+print(f'p50={m.get(\"latency_p50_ms\")}ms  p95={m.get(\"latency_p95_ms\")}ms')
+print(f'契約ソース RAG  p95={m.get(\"contract_rag_latency_p95_ms\")}ms  tokens_p95={m.get(\"contract_rag_input_tokens_p95\")}')
+"
+```
+
+**備考:** `input_tokens_est` = evidence テキスト長 // 4 + 質問長 // 4（文字ベース推定。tiktoken 未使用）。±30% の誤差を想定。
+
+### 計測結果（次回 eval 実行後にここに貼付）
+
+| 経路 | 件数 | 割合 |
+|---|---|---|
+| （次回 eval 実行後） | — | — |
+
+| 指標 | p50 | p95 |
+|---|---|---|
+| 全質問 レイテンシ | — ms | — ms |
+| 契約ソース RAG レイテンシ | — ms | — ms |
+| 契約ソース RAG 入力トークン（推定） | — | — |
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する

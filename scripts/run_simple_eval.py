@@ -222,6 +222,48 @@ def calculate_aggregate_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]
     aligned = [r for r in successful_results if r.get("intent_aligned")]
     metrics["intent_alignment_rate"] = len(aligned) / successful if successful else 0.0
 
+    # Routing breakdown (AIT-MET-02)
+    routing: Dict[str, int] = defaultdict(int)
+    for r in successful_results:
+        dp = r.get("decision_path") or "unknown"
+        # Distinguish 契約ソース RAG from 一般 RAG
+        if dp == "rag" and r.get("contract_source_q"):
+            routing["contract_source_rag"] += 1
+        else:
+            routing[dp] += 1
+    metrics["routing_breakdown"] = {
+        path: {"count": cnt, "rate": round(cnt / successful, 4)}
+        for path, cnt in sorted(routing.items())
+    }
+
+    # Latency p95 across eval questions (AIT-MET-01)
+    latencies = [r["latency_ms"] for r in successful_results if r.get("latency_ms") is not None]
+    if latencies:
+        sorted_lat = sorted(latencies)
+        metrics["latency_p50_ms"] = round(sorted_lat[len(sorted_lat) // 2], 1)
+        p95_idx = int(len(sorted_lat) * 0.95)
+        metrics["latency_p95_ms"] = round(sorted_lat[p95_idx], 1)
+        contract_lats = [
+            r["latency_ms"] for r in successful_results
+            if r.get("latency_ms") is not None and r.get("contract_source_q")
+        ]
+        if contract_lats:
+            sorted_clat = sorted(contract_lats)
+            metrics["contract_rag_latency_p50_ms"] = round(sorted_clat[len(sorted_clat) // 2], 1)
+            p95_cidx = int(len(sorted_clat) * 0.95)
+            metrics["contract_rag_latency_p95_ms"] = round(sorted_clat[p95_cidx], 1)
+
+    # Input token estimates for contract source RAG (AIT-MET-01)
+    contract_toks = [
+        r["input_tokens_est"] for r in successful_results
+        if r.get("input_tokens_est") and r.get("contract_source_q")
+    ]
+    if contract_toks:
+        sorted_ctoks = sorted(contract_toks)
+        metrics["contract_rag_input_tokens_avg"] = round(sum(sorted_ctoks) / len(sorted_ctoks))
+        p95_toks_idx = int(len(sorted_ctoks) * 0.95)
+        metrics["contract_rag_input_tokens_p95"] = sorted_ctoks[p95_toks_idx]
+
     # Gates (targets: completeness >= 0.7, miss rate < 0.1)
     ac = metrics.get("avg_answer_completeness", 0.0)
     metrics["completeness_gate_pass"] = bool(ac >= 0.7)
