@@ -201,6 +201,7 @@ def handle_line_webhook(
 
     try:
         cfg = get_config()
+        from src.contract_query_router import is_contract_source_question
         from src.interfaces.line import clarification_followup as cf
         from src.kb_fast_path import normalize_for_match, try_kb_fast_path
         from src.rag_app_state import get_rag_bundle
@@ -270,15 +271,22 @@ def handle_line_webhook(
             )
             effective_text = resolved or text
 
-            fp = try_kb_fast_path(
-                effective_text,
-                cfg,
-                kb_docs,
-                prior_clarification_intent=prior_intent,
-                prior_clarification_normalized_query=prior_norm,
-                line_user_id=line_user_id,
-                user_text_for_prior_match=text,
-            )
+            # Contract source questions (条文・重説・違約金額 etc.) must bypass KB fast path
+            # and reach RAGAnswerer so Master TXT is searched. KB fast path only handles FAQ.
+            _is_contract_q = is_contract_source_question(effective_text)
+            if not _is_contract_q:
+                fp = try_kb_fast_path(
+                    effective_text,
+                    cfg,
+                    kb_docs,
+                    prior_clarification_intent=prior_intent,
+                    prior_clarification_normalized_query=prior_norm,
+                    line_user_id=line_user_id,
+                    user_text_for_prior_match=text,
+                )
+            else:
+                from src.kb_fast_path import KBFastPathResult
+                fp = KBFastPathResult(kind="miss", match_detail={"reason": "contract_source_bypass"})
             if fp.kind in ("hit", "clarification"):
                 if fp.kind == "clarification":
                     nq = fp.match_detail.get("clarification_numeric_queries") or []
