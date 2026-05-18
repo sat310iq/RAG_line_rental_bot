@@ -99,26 +99,6 @@ class RAGAnswerer:
         self.llm_structured = self.llm.with_structured_output(AnswerSchema)
         
         # Prompts
-        self.router_prompt = ChatPromptTemplate.from_template("""
-質問を分析して、どのデータソースから回答すべきか分類してください。
-
-**重要**: 個別契約CSV（kb_deal_csv）に該当する質問は優先的に「deal_only」を選択してください。
-特に以下のような質問はKB CSVを優先:
-- 契約解除、解約、退去
-- 証明書（車庫証明、家賃証明書など）の発行手続き
-- ゴミ出し、設備トラブル、ペット飼育
-- よくある質問（FAQ）
-
-分類:
-- "deal_only": 個別契約CSVだけで回答できる質問（優先推奨）
-- "master_only": マスターTXT（契約・重説）から回答すべき質問（詳細な契約条項のみ）
-- "multi": 複数のソースから統合して回答すべき質問
-
-質問: {question}
-
-分類（deal_only/master_only/multiのいずれか）:
-""")
-        
         self.planner_prompt = ChatPromptTemplate.from_template("""
 ユーザーの質問を分析し、検索に適したサブクエリを生成してください。
 
@@ -311,26 +291,6 @@ class RAGAnswerer:
             print(f"[WARN] LegalTermResolver init failed: {e}", file=sys.stderr)
             self._legal_term_resolver = None
 
-    def _route_query(self, question: str) -> Literal["deal_only", "master_only", "multi"]:
-        """Route query to appropriate source(s).
-        
-        Args:
-            question: User question
-            
-        Returns:
-            Source type to search
-        """
-        chain = self.router_prompt | self.llm | StrOutputParser()
-        result = chain.invoke({"question": question}).strip().lower()
-        
-        # Parse result
-        if "deal_only" in result or "deal" in result or "csv" in result:
-            return "deal_only"
-        elif "master_only" in result or "master" in result or "pdf" in result:
-            return "master_only"
-        else:
-            return "multi"
-    
     def _plan_subqueries(self, question: str) -> List[str]:
         """Generate subqueries from question.
         

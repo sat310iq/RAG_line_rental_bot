@@ -215,6 +215,12 @@ flowchart TB
 - 実際の `source_type` は **検索結果の有無**で決まる（`csv_docs` と `pdf_docs` の両方があると `multi`）。
 - よって「混在は multi のときだけ」への移行は、**ルーター精度の検証以前に配線が必要**（→ **AIT-RTE-02**）。FP/FN 評価は未実施（→ **AIT-RTE-03**）。
 
+#### AIT-RTE-01 決定記録（2026-05-17）
+
+**決定: `_route_query()` を削除する。**
+
+`_route_query()` は初期実装から `answer()` に配線されたことがなく、現状デッドコードである。削除を選択する理由は三点。第一に、バイナリの振り分け（契約ソース問い合わせか否か）は `is_contract_source_question()` が決定論的・ゼロ LLM コストで提供しており、同等の機能が既存ルーターで充足される。第二に、採用した場合クエリごとに余分な LLM 呼び出し（+200〜800 ms）が加わるが、精度検証（FP/FN）が未実施のため改善効果は不明であり、Routing-First 設計の「最小レイテンシ優先」に逆行する。第三に、ルータープロンプトが FAQ 項目（ゴミ出し・トラブル等）を "deal_only" に分類する設計になっており、これらは Fast Path で処理すべきクエリと混同されていて、配線前にプロンプトの全面再設計が必要になる。却下案: **採用**（精度未検証かつレイテンシ増）、**ルールベース置換**（`is_contract_source_question()` で既にカバー済みのため重複）。AIT-RTE-02・AIT-RTE-03 は本決定により **N/A**（クローズ対象）。
+
 ### 7.3 eval・CLI への影響
 
 | 利用経路 | 依存 | `master_top_k=0` 化の影響 |
@@ -257,9 +263,9 @@ flowchart TB
 |----|-----|---------------------|------|--------------|----------|
 | **AIT-MET-01** | `rental_rag_poc-6m7` | LINE p95 レイテンシ + 契約ソース RAG の **入力トークン/問** を各 **10 問** サンプル計測 | **未アサイン** | **2026-05-31** | `docs/eval_log.md` に表追記（p95 ms、平均/ p95 トークン）。計測手順（スクリプト or Cloud Run ログクエリ）を 1 行記載 |
 | **AIT-MET-02** | `rental_rag_poc-krz` | 経路別（KB hit / 契約ソース / 一般 RAG）の件数・割合を eval に記録 | **未アサイン** | **2026-05-31** | 次回 `run_simple_eval.py` 実行時に `decision_path` 集計を `eval_log.md` に貼付 |
-| **AIT-RTE-01** | `rental_rag_poc-69f` | `_route_query` を **採用 / 削除 / ルールベース置換** のいずれかを決定 | **未アサイン** | **2026-06-15** | `docs/architecture/` または `CONTEXT.md` に 1 段落の決定事項（理由・却下案）。**配線前の必須ゲート** |
-| **AIT-RTE-02** | `rental_rag_poc-0gh` | AIT-RTE-01 で「採用」なら `answer()` に配線（**feature flag 推奨**） | **未アサイン** | **2026-06-30** | `grep '_route_query'` で `answer()` からの呼び出しあり。ユニットテスト ≥3（deal_only / master_only / multi）。**却下なら本行は N/A と明記してクローズ** |
-| **AIT-RTE-03** | `rental_rag_poc-mrf` | multi ルーターの **FP/FN**（ラベル付きセット） | **未アサイン** | **2026-06-30**（RTE-02 採用時） | ラベル付き **≥30 問**（deal / master / multi 各10）。`eval_log.md` に FP率・FN率・混同行列要約。**RTE-01 却下ならクローズ不要** |
+| ~~**AIT-RTE-01**~~ | `rental_rag_poc-69f` | `_route_query` を **採用 / 削除 / ルールベース置換** のいずれかを決定 | skoyama | ~~2026-06-15~~ | **✅ 完了（2026-05-17）: 削除。§7.2 AIT-RTE-01 決定記録参照** |
+| ~~**AIT-RTE-02**~~ | `rental_rag_poc-0gh` | AIT-RTE-01 で「採用」なら `answer()` に配線 | — | — | **N/A — AIT-RTE-01 が「削除」のためクローズ** |
+| ~~**AIT-RTE-03**~~ | `rental_rag_poc-mrf` | multi ルーターの **FP/FN**（ラベル付きセット） | — | — | **N/A — AIT-RTE-01 が「削除」のためクローズ** |
 | **AIT-TIER-01** | `rental_rag_poc-ir7` | `deal_only` 時 `master_top_k=0` | **未アサイン** | **AIT-MET-01/02 完了後** | Metrics v2 17 問 + 代表62 で回帰なし。`master_top_k=0` がデフォルト or 設定化 |
 
 **§7.2 との対応:** 「未配線・FP/FN 未実施」＝ **AIT-RTE-01〜03 の未完了**。レビュー時は上表の **期限・完了基準** で進捗を確認する（把握済みで止めない）。
@@ -284,3 +290,4 @@ flowchart TB
 - *v0.1 (2026-05-16): 初版・レビュー指摘一括反映*
 - *v0.2 (2026-05-16): Reviewed 昇格・§8.2 アクション ID（AIT-*）・§7.2 を追跡アイテムに紐づけ*
 - *v0.3 (2026-05-16): §8.2 に Beads チケット ID（BD 列）を追加*
+- *v0.4 (2026-05-17): AIT-RTE-01 決定記録追加（§7.2）— `_route_query` 削除・AIT-RTE-02/03 N/A クローズ*
