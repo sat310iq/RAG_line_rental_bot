@@ -1493,6 +1493,8 @@ class RAGAnswerer:
                     int(getattr(self.config, "contract_source_master_top_k", 10) or 10),
                     int(self.config.rag_rerank_top_n),
                 )
+            else:
+                _kwargs["master_top_k"] = 0
             hierarchical_results = self._hierarchical_search(
                 question, tenant_contract_id, **_kwargs
             )

@@ -253,9 +253,9 @@
 
 ---
 
-## AIT-MET-02: 経路別ルーティング集計｜2026-05-17（実装完了・次回 eval で計測）
+## AIT-MET-02: 経路別ルーティング集計｜2026-05-17（計測完了）
 
-> commit: （次コミット）。`src/evaluate.py` と `scripts/run_simple_eval.py` に経路別集計を追加。
+> commit: 43273f2（AIT-MET-01/02実装）。`src/evaluate.py` と `scripts/run_simple_eval.py` に経路別集計を追加。AIT-TIER-01（master_top_k=0）実装後に再計測済み。
 
 ### 追加フィールド（`data/eval/eval_metrics.json` — 次回 eval 実行後に反映）
 
@@ -289,17 +289,21 @@ print(f'契約ソース RAG  p95={m.get(\"contract_rag_latency_p95_ms\")}ms  tok
 
 **備考:** `input_tokens_est` = evidence テキスト長 // 4 + 質問長 // 4（文字ベース推定。tiktoken 未使用）。±30% の誤差を想定。
 
-### 計測結果（次回 eval 実行後にここに貼付）
+### 計測結果（2026-05-17 / 17問 / AIT-TIER-01実装後）
 
 | 経路 | 件数 | 割合 |
 |---|---|---|
-| （次回 eval 実行後） | — | — |
+| direct（Fast Path） | 15 | 88.2% |
+| clarification | 1 | 5.9% |
+| contract_source_rag | 1 | 5.9% |
 
 | 指標 | p50 | p95 |
 |---|---|---|
-| 全質問 レイテンシ | — ms | — ms |
-| 契約ソース RAG レイテンシ | — ms | — ms |
-| 契約ソース RAG 入力トークン（推定） | — | — |
+| 全質問 レイテンシ | 3.0 ms | 12,733.8 ms |
+| 契約ソース RAG レイテンシ | 12,733.8 ms | 12,733.8 ms |
+| 契約ソース RAG 入力トークン（推定） | avg=313 | p95=313 |
+
+> p95 が高い（12.7秒）のは 1問のみ契約ソース RAG に到達したため。サンプル数が少なく参考値。`rag_search_timeout_sec=10s` の設定内（Cloud Run 環境基準）。
 
 ---
 

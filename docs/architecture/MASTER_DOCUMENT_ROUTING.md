@@ -209,11 +209,11 @@ flowchart TB
 
 ### 7.2 multi ルーターについて（提案の前提）
 
-**記録の位置づけ:** 以下は **既知のギャップ（問題として認識済み）** であり、放置しない。**追跡用アクションは §8.2 の `AIT-RTE-*`**（担当・期限・完了基準あり）。
+**記録の位置づけ（2026-05-17 更新）:** AIT-RTE-01 の決定により、以下のギャップは **解消済み**。
 
-- `RAGAnswerer._route_query()` は **LLM で deal_only / master_only / multi を返す設計**だが、**現状 `answer()` からは呼ばれていない**。
-- 実際の `source_type` は **検索結果の有無**で決まる（`csv_docs` と `pdf_docs` の両方があると `multi`）。
-- よって「混在は multi のときだけ」への移行は、**ルーター精度の検証以前に配線が必要**（→ **AIT-RTE-02**）。FP/FN 評価は未実施（→ **AIT-RTE-03**）。
+- ~~`RAGAnswerer._route_query()` は LLM で deal_only / master_only / multi を返す設計だが、`answer()` からは呼ばれていない。~~ → **AIT-RTE-01 決定: 削除済み**（`src/rag_answerer.py` から除去）。AIT-RTE-02/03 は N/A クローズ。
+- 実際の `source_type` は **検索結果の有無**で決まる（`csv_docs` と `pdf_docs` の両方があると `multi`）。この挙動は継続。
+- 非契約ソース（`contract_source_q=False`）かつ RAG 経路（`decided_kb_path=False`）での `master_top_k` 未指定は **AIT-TIER-01 で解消済み**（`master_top_k=0` を明示）。
 
 #### AIT-RTE-01 決定記録（2026-05-17）
 
