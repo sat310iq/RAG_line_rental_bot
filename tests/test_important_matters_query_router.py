@@ -55,6 +55,13 @@ def test_is_important_matters_question(question: str, expected: bool) -> None:
         ("重説の16番の利用制限はどう書いてありますか", "16"),
         ("重説 16番の利用制限はどう書いてありますか", "16"),
         ("宅建の重要事項で更新料は何ヶ月分と記載されていますか", None),
+        # PR-1a: 「重説のN項目」「重要事項のN項目」形式（全角数字・項目サフィックス対応）
+        ("重説の３項目・家賃について教えて", "3"),
+        ("重要事項説明書の３項目では家賃はいくらですか", "3"),
+        ("重要事項の1項目目は？", "1"),
+        # 「重要事項」文脈なし → None（数字があっても誤ヒットしない）
+        ("ハザードマップで何か注意点は？", None),
+        ("月々の支払いは合計いくら？", None),
     ],
 )
 def test_extract_important_matters_section_id(question: str, expected_section: str | None) -> None:

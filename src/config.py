@@ -101,6 +101,13 @@ class Config(BaseSettings):
         ge=1,
         description="Minimum number of retry candidates to keep after lightweight filtering.",
     )
+    master_section_inject_enabled: bool = Field(
+        default=True,
+        description=(
+            "If True, inject important_matters section chunk by metadata fetch "
+            "when G1-G6 conditions are met (PR-1b). Set to false to disable without redeploy."
+        ),
+    )
     kb_empty_try_master_pdf: bool = Field(
         default=True,
         description="If True and KB path had no deal+master hits, retry hierarchical search with master TXT enabled.",

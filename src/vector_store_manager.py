@@ -455,6 +455,36 @@ class VectorStoreManager:
         
         return results
     
+    def fetch_master_by_metadata(self, *, doc_kind: str, section_id: str) -> List[Document]:
+        """Fetch master chunks by doc_kind + section_id without embedding search.
+
+        Uses Chroma metadata filter. Returns at most 3 docs (caller takes [:1]).
+        Returns [] if the collection is unavailable or the query fails.
+        """
+        if not self.master_vector_store:
+            return []
+        try:
+            result = self.master_vector_store._collection.get(
+                where={"$and": [
+                    {"doc_kind": {"$eq": doc_kind}},
+                    {"section_id": {"$eq": section_id}},
+                ]},
+                limit=3,
+            )
+            docs: List[Document] = []
+            for content, meta in zip(
+                result.get("documents") or [],
+                result.get("metadatas") or [],
+            ):
+                if content is not None:
+                    docs.append(Document(page_content=content, metadata=meta or {}))
+            return docs
+        except Exception:
+            logger.exception(
+                "fetch_master_by_metadata failed doc_kind=%s section_id=%s", doc_kind, section_id
+            )
+            return []
+
     def get_collection_counts(self) -> Dict[str, int]:
         """Get document counts for each collection.
         

@@ -27,7 +27,9 @@ _RE_JUYO_SETSUMEISHO_TYPO = re.compile(r"要事項説明書")
 _RE_JUSETSU = re.compile(r"重説")
 _RE_JUYO_SECTION = re.compile(r"重要事項[^\n]{0,40}の\s*[0-9０-９一二三四五六七八九十]+[\.．]")
 _RE_SECTION_NUM_JUYO = re.compile(r"重要事項[^\n]{0,48}の\s*([0-9０-９]+)")
-_RE_SECTION_NUM_BARE = re.compile(r"(?:^|[\s、,の])([0-9０-９]+)\s*番")
+# 「重説のN項目」「重説のN番」形式（重要事項 → 重説 略称）
+_RE_SECTION_NUM_JUSETSU = re.compile(r"重説[^\n]{0,20}の\s*([0-9０-９]+)")
+_RE_SECTION_NUM_BARE = re.compile(r"(?:^|[\s、,の])([0-9０-９]+)\s*(?:番|項目)")
 
 IMPORTANT_MATTERS_HINTS: tuple[str, ...] = (
     "重要事項",
@@ -174,9 +176,13 @@ def extract_contract_article_index(question: str) -> Optional[int]:
 
 
 def extract_important_matters_section_id(question: str) -> Optional[str]:
-    """Parse section number for 重要事項の12 / 12番 style queries (NFKC digits only)."""
+    """Parse section number for 重要事項の12 / 重説の3項目 / 12番 style queries (NFKC digits only)."""
     q = _normalize_question(question)
     m = _RE_SECTION_NUM_JUYO.search(q)
+    if m:
+        raw = m.group(1)
+        return "".join(c for c in unicodedata.normalize("NFKC", raw) if c.isdigit()) or None
+    m = _RE_SECTION_NUM_JUSETSU.search(q)
     if m:
         raw = m.group(1)
         return "".join(c for c in unicodedata.normalize("NFKC", raw) if c.isdigit()) or None

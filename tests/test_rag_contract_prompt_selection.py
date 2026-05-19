@@ -27,6 +27,7 @@ class _DummyConfig:
     rag_contract_source_drop_kb_faq_entirely = True
     contract_source_master_top_k = 10
     contract_source_retry_top_k = 12
+    master_section_inject_enabled = False
 
     def get_source_score_thresholds(self):
         return {"csv": 0.0, "pdf": 0.0}
@@ -66,6 +67,12 @@ def _build_rag_with_stubbed_pipeline(docs):
     rag.contract_answer_prompt = _FakePrompt("contract_prompt")
     rag.contract_source_qa_prompt = _FakePrompt("contract_source_qa_prompt")
     rag.llm_structured = object()
+
+    # PR-1b: inject関数が vector_store_manager を参照するため stub が必要
+    from unittest.mock import MagicMock
+    vsm_stub = MagicMock()
+    vsm_stub.fetch_master_by_metadata.return_value = []
+    rag.vector_store_manager = vsm_stub
 
     rag._decide_answer_path = lambda question, forced_system="auto": {
         "system": "RAG",

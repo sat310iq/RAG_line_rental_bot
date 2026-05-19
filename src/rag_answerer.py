@@ -27,7 +27,12 @@ from src.individual_contract_guard import (
     should_handoff_individual_contract_terms,
 )
 from src.kb_fast_path import load_kb_documents_for_fast_path, try_kb_fast_path
-from src.contract_query_router import extract_contract_article_index, is_contract_source_question
+from src.contract_query_router import (
+    extract_contract_article_index,
+    extract_important_matters_section_id,
+    is_contract_source_question,
+    is_important_matters_question,
+)
 from src.contract_query_intent import detect_article_reference, detect_usage_purpose_intent
 from src.retrieval_metadata_boost import apply_master_document_boost
 from src.contract_rag_format import (
@@ -39,6 +44,41 @@ from src.contract_rag_format import (
     uses_master_source_docs,
 )
 from src.legal_term_resolver import LegalTermResolver
+
+
+def _inject_important_matters_section_if_needed(
+    question: str,
+    other_docs: List[Document],
+    vsm: "VectorStoreManager",
+    *,
+    contract_source_q: bool,
+    enabled: bool,
+) -> Tuple[List[Document], Optional[str]]:
+    """Prepend §N chunk to other_docs when all G1-G6 guards pass.
+
+    Returns (docs, inject_reason_or_None).
+    G1: contract_source_q path only
+    G2: is_important_matters_question
+    G3: section_id extractable (not None)
+    G4: pool has no important_matters chunk yet
+    G5: enabled flag (MASTER_SECTION_INJECT_ENABLED env)
+    G6: inject at most 1 chunk
+    """
+    if not contract_source_q:  # G1
+        return other_docs, None
+    if not enabled:  # G5
+        return other_docs, None
+    if not is_important_matters_question(question):  # G2
+        return other_docs, None
+    sid = extract_important_matters_section_id(question)
+    if sid is None:  # G3
+        return other_docs, None
+    if any(str((d.metadata or {}).get("doc_kind") or "") == "important_matters" for d in other_docs):  # G4
+        return other_docs, None
+    chunks = vsm.fetch_master_by_metadata(doc_kind="important_matters", section_id=sid)
+    if not chunks:
+        return other_docs, f"important_matters_section_fetch_empty:sid={sid}"
+    return chunks[:1] + other_docs, f"important_matters_section_fetch:sid={sid}"  # G6
 
 
 class AnswerItem(BaseModel):
@@ -1650,6 +1690,15 @@ class RAGAnswerer:
             # Re-apply keyword+precedence order after dedup/merge (dedup can scramble CSV order)
             kb_docs_in_results = self._keyword_rerank(question, kb_docs_in_results)
         other_docs = [doc for doc in unique_docs if doc.metadata.get('type') != 'kb_faq']
+        other_docs, inject_reason = _inject_important_matters_section_if_needed(
+            question,
+            other_docs,
+            self.vector_store_manager,
+            contract_source_q=contract_source_q,
+            enabled=self.config.master_section_inject_enabled,
+        )
+        if inject_reason:
+            search_debug_info["important_matters_section_inject"] = inject_reason
         master_boost_trace: List[Dict[str, Any]] = []
         if contract_source_q:
             other_docs, master_boost_trace = apply_master_document_boost(
