@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from src.config import bootstrap_dotenv, load_config
 from src.config_summary import log_config_summary
+from src.logging_config import setup_logging
 from src.interfaces.line.handler import (
     handle_line_webhook,
     try_send_fallback_to_events,
@@ -36,7 +37,7 @@ _webhook_pool: ThreadPoolExecutor | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _webhook_pool
-    logging.basicConfig(level=logging.INFO)
+    setup_logging()
     config = load_config()
     if config.rag_skip_startup_checks:
         logger.warning(

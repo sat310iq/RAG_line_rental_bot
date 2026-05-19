@@ -380,10 +380,7 @@ def try_kb_fast_path(
         log_payload["clarification_reason"] = clar_reason
         log_payload["clarification_numeric_queries"] = clar_numeric
         text = build_clarification_message(clar_prompt, clar_options, clar_examples)
-        logger.info(
-            "kb_fast_path_clarification %s",
-            json.dumps({**log_payload, "event": "kb_fast_path_clarification"}, ensure_ascii=False),
-        )
+        logger.info("kb_fast_path_clarification", extra={**log_payload, "event": "kb_fast_path_clarification"})
         return KBFastPathResult(
             kind="clarification",
             text=text,
@@ -397,10 +394,7 @@ def try_kb_fast_path(
         log_payload["clarification_reason"] = clar_reason
         log_payload["clarification_numeric_queries"] = clar_numeric
         text = build_clarification_message(clar_prompt, clar_options, clar_examples)
-        logger.info(
-            "kb_fast_path_clarification %s",
-            json.dumps({**log_payload, "event": "kb_fast_path_clarification"}, ensure_ascii=False),
-        )
+        logger.info("kb_fast_path_clarification", extra={**log_payload, "event": "kb_fast_path_clarification"})
         return KBFastPathResult(
             kind="clarification",
             text=text,
@@ -414,10 +408,7 @@ def try_kb_fast_path(
         log_payload["clarification_reason"] = clar_reason
         log_payload["clarification_numeric_queries"] = clar_numeric
         text = build_clarification_message(clar_prompt, clar_options, clar_examples)
-        logger.info(
-            "kb_fast_path_clarification %s",
-            json.dumps({**log_payload, "event": "kb_fast_path_clarification"}, ensure_ascii=False),
-        )
+        logger.info("kb_fast_path_clarification", extra={**log_payload, "event": "kb_fast_path_clarification"})
         return KBFastPathResult(
             kind="clarification",
             text=text,
@@ -427,17 +418,14 @@ def try_kb_fast_path(
         )
 
     if not answer:
-        logger.info("kb_fast_path_miss reason=no_answer intent=%s", intent)
+        logger.info("kb_fast_path_miss", extra={"event": "kb_fast_path_miss", "reason": "no_answer", "intent": intent})
         return KBFastPathResult(
             kind="miss",
             normalized_query=q_norm,
             match_detail={"reason": "no_answer", "intent": intent},
         )
 
-    logger.info(
-        "kb_fast_path_hit %s",
-        json.dumps({**log_payload, "event": "kb_fast_path_hit"}, ensure_ascii=False),
-    )
+    logger.info("kb_fast_path_hit", extra={**log_payload, "event": "kb_fast_path_hit"})
     return KBFastPathResult(
         kind="hit",
         text=answer,

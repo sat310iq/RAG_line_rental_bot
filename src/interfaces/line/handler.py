@@ -28,15 +28,13 @@ def _log_line_reply_audit(reply_text: str, *, source: str) -> None:
     rt = reply_text or ""
     masked = rt[:30] + "..." if len(rt) > 30 else rt
     logger.info(
-        json.dumps(
-            {
-                "event": "line_reply",
-                "source": source,
-                "reply_masked": masked,
-                "reply_len": len(rt),
-            },
-            ensure_ascii=False,
-        )
+        "line_reply",
+        extra={
+            "event": "line_reply",
+            "reply_source": source,
+            "reply_masked": masked,
+            "reply_len": len(rt),
+        },
     )
 
 
@@ -287,6 +285,22 @@ def handle_line_webhook(
             else:
                 from src.kb_fast_path import KBFastPathResult
                 fp = KBFastPathResult(kind="miss", match_detail={"reason": "contract_source_bypass"})
+            logger.info(
+                "routing_decision",
+                extra={
+                    "event": "routing_decision",
+                    "query": text[:200],
+                    "contract_source_q": _is_contract_q,
+                    "fast_path_kind": fp.kind,
+                    "fast_path_intent": fp.intent,
+                    "decision_path": (
+                        "kb_fast_path" if fp.kind in ("hit", "clarification")
+                        else "contract_rag" if _is_contract_q
+                        else "rag"
+                    ),
+                    "line_user_id": line_user_id,
+                },
+            )
             if fp.kind in ("hit", "clarification"):
                 if fp.kind == "clarification":
                     nq = fp.match_detail.get("clarification_numeric_queries") or []

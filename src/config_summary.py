@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -57,5 +56,5 @@ def log_config_summary(config: Config, *, service: str = "line-webhook") -> Dict
         "config": _redact_config_snapshot(config),
         "manifest": manifest,
     }
-    logger.info("CONFIG_SUMMARY %s", json.dumps(payload, ensure_ascii=False))
+    logger.info("CONFIG_SUMMARY", extra=payload)
     return payload
