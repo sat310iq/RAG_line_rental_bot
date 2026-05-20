@@ -1,6 +1,10 @@
 from langchain_core.documents import Document
 
-from src.retrieval_metadata_boost import apply_master_document_boost
+from src.retrieval_metadata_boost import (
+    apply_master_document_boost,
+    _is_tokuyaku_penalty_question,
+    _is_tokuyaku_penalty_chunk,
+)
 
 
 def _doc(article: int, *, article_number: str | None = None, content: str | None = None) -> Document:
@@ -79,3 +83,120 @@ def test_jusetsu_section_boost_not_fired_without_context() -> None:
     )
     reasons = [t.get("boost_reason", "") for t in trace]
     assert not any("section_exact" in r for r in reasons)
+
+
+# ---------------------------------------------------------------------------
+# PR-1c: 特約④ / 短期解約違約金 boost
+# ---------------------------------------------------------------------------
+
+def _tokuyaku_doc(*, content: str, article_number: str = "特約") -> Document:
+    return Document(
+        page_content=content,
+        metadata={
+            "type": "master_txt",
+            "doc_kind": "contract",
+            "article_number": article_number,
+            "filename": "契約書.txt",
+        },
+    )
+
+
+# --- _is_tokuyaku_penalty_question 単体 ---
+
+def test_tokuyaku_penalty_question_fires_on_iyakukin_ikura() -> None:
+    assert _is_tokuyaku_penalty_question("違約金はいくらですか？") is True
+
+
+def test_tokuyaku_penalty_question_fires_on_tankikaiyaku() -> None:
+    assert _is_tokuyaku_penalty_question("短期解約した場合の費用は？") is True
+
+
+def test_tokuyaku_penalty_question_not_fired_for_general_iyakukin() -> None:
+    # 「違約金について教えて」は金額キーワードなし → False（KB 経路回帰）
+    assert _is_tokuyaku_penalty_question("違約金について教えて") is False
+
+
+def test_tokuyaku_penalty_question_not_fired_when_numbered_tokuyaku() -> None:
+    # T3: 番号付き特約が明示 → False（既存ロジック優先）
+    assert _is_tokuyaku_penalty_question("特約④の内容を教えてください") is False
+    assert _is_tokuyaku_penalty_question("特約⑤はどうなっていますか") is False
+
+
+# --- _is_tokuyaku_penalty_chunk 単体 ---
+
+def test_tokuyaku_penalty_chunk_matches_content_with_tankikaiyaku_iyakukin() -> None:
+    doc = _tokuyaku_doc(content="特約④（短期解約違約金）6ヶ月以内 114,600円")
+    assert _is_tokuyaku_penalty_chunk(doc) is True
+
+
+def test_tokuyaku_penalty_chunk_not_matches_unrelated_article() -> None:
+    doc = _doc(24, content="第24条 遅延損害金 年14.6%")
+    assert _is_tokuyaku_penalty_chunk(doc) is False
+
+
+# --- apply_master_document_boost 統合 ---
+
+def test_tokuyaku_penalty_boost_fires_and_moves_to_front() -> None:
+    """違約金+金額クエリで特約④ chunk が先頭になること（PR-1c）。"""
+    penalty_chunk = _tokuyaku_doc(
+        content="特約④（短期解約違約金）6ヶ月以内 114,600円",
+        article_number="特約④",
+    )
+    docs = [
+        _doc(24, content="第24条 遅延損害金 年14.6%"),
+        penalty_chunk,
+    ]
+    boosted, trace = apply_master_document_boost(
+        "違約金はいくら？",
+        docs,
+        contract_source_q=True,
+    )
+    assert boosted[0] is penalty_chunk
+    reasons = [t.get("boost_reason", "") for t in trace]
+    assert any("tokuyaku_penalty_clause" in r for r in reasons)
+
+
+def test_tokuyaku_penalty_boost_not_fired_for_general_query() -> None:
+    """「特約について教えて」では boost が発火しないこと（T2 不成立）。"""
+    docs = [
+        _doc(24, content="第24条 遅延損害金"),
+        _tokuyaku_doc(content="特約④（短期解約違約金）114,600円"),
+    ]
+    _, trace = apply_master_document_boost(
+        "特約について教えて",
+        docs,
+        contract_source_q=True,
+    )
+    reasons = [t.get("boost_reason", "") for t in trace]
+    assert not any("tokuyaku_penalty" in r for r in reasons)
+
+
+def test_tokuyaku_penalty_boost_not_fired_for_numbered_tokuyaku_query() -> None:
+    """番号付き特約クエリは T3 でブロック、二重 boost なし。"""
+    docs = [
+        _doc(24, content="第24条 遅延損害金"),
+        _tokuyaku_doc(content="特約④（短期解約違約金）114,600円"),
+    ]
+    _, trace = apply_master_document_boost(
+        "特約④の内容を教えてください",
+        docs,
+        contract_source_q=True,
+    )
+    reasons = [t.get("boost_reason", "") for t in trace]
+    assert not any("tokuyaku_penalty" in r for r in reasons)
+
+
+def test_tokuyaku_penalty_boost_promotes_at_most_two_chunks() -> None:
+    """最大2件しか promote しないこと（G6相当）。"""
+    penalty_chunks = [
+        _tokuyaku_doc(content=f"特約④ 短期解約違約金 variant{i}")
+        for i in range(4)
+    ]
+    docs = [_doc(24)] + penalty_chunks
+    boosted, trace = apply_master_document_boost(
+        "短期解約の違約金はいくらですか",
+        docs,
+        contract_source_q=True,
+    )
+    promoted = [t for t in trace if t.get("boost_reason") == "tokuyaku_penalty_clause"]
+    assert len(promoted) <= 2

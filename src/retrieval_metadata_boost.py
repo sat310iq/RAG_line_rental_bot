@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any, Dict, List, Tuple
 
 from langchain_core.documents import Document
+
+# T3: 番号付き特約（特約①〜⑫ または 特約1〜12）が明示されている場合は既存ロジック優先
+_RE_TOKUYAKU_NUMBERED = re.compile(r"特約\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫0-9０-９]+")
+# T2: 違約金+金額系キーワード
+_RE_PENALTY_AMOUNT = re.compile(r"いくら|幾ら|金額|何ヶ月|何カ月")
 
 from src.contract_query_router import (
     extract_contract_article_index,
@@ -23,6 +30,30 @@ def _meta_signature(d: Document) -> Tuple[Any, ...]:
         m.get("section_id"),
         hash((d.page_content or "")[:400]),
     )
+
+
+def _is_tokuyaku_penalty_question(question: str) -> bool:
+    """T2+T3: 違約金+金額 or 短期解約 かつ 番号付き特約が明示されていない場合に True。"""
+    q = unicodedata.normalize("NFKC", question or "")
+    if _RE_TOKUYAKU_NUMBERED.search(q):  # T3: 番号付き特約は既存ロジック優先
+        return False
+    if "短期解約" in q:  # T2
+        return True
+    if "違約金" in q and _RE_PENALTY_AMOUNT.search(q):  # T2
+        return True
+    return False
+
+
+def _is_tokuyaku_penalty_chunk(doc: Document) -> bool:
+    """特約④（短期解約違約金）を含む chunk かを content + metadata で判定。"""
+    m = doc.metadata or {}
+    haystack = "\n".join([
+        doc.page_content or "",
+        str(m.get("article_number") or ""),
+        str(m.get("section_label") or ""),
+        str(m.get("cite_label") or ""),
+    ])
+    return "短期解約違約金" in haystack or "特約④" in haystack
 
 
 def _is_usage_purpose_article3_candidate(doc: Document) -> bool:
@@ -102,6 +133,15 @@ def apply_master_document_boost(
         for d in pool:
             if str((d.metadata or {}).get("section_id") or "") == sid:
                 append_if_new(d, f"section_exact:{sid}")
+
+    if _is_tokuyaku_penalty_question(question):
+        promoted = 0
+        for d in pool:
+            if promoted >= 2:
+                break
+            if _is_tokuyaku_penalty_chunk(d):
+                append_if_new(d, "tokuyaku_penalty_clause")
+                promoted += 1
 
     rest = [d for d in pool if _meta_signature(d) not in picked_sig]
     if prefers_contract_master_chunks(question):
