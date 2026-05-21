@@ -368,6 +368,43 @@ print(f'契約ソース RAG  p95={m.get(\"contract_rag_latency_p95_ms\")}ms  tok
 
 ---
 
+## PR-1a/1b/1c デプロイ後修正｜2026-05-21
+
+> revision: **line-webhook-20260521-0942**（G4 fix + tokuyaku inject）  
+> コミット: 5951a21  
+> 背景: PR-1c（line-webhook-20260520-2343）デプロイ後、§3 inject が regression・特約④が未反映 → 原因特定・修正・再デプロイ
+
+### 根本原因
+
+| 不具合 | 症状 | 原因 |
+|---|---|---|
+| §3 inject regression | 「記載がない」から「家賃に関する情報は確認できませんでした」に悪化 | G4 が `doc_kind==important_matters` で全件ブロック（§1/§20 が pool にいると §3 inject も止まる） |
+| 特約④ 未反映 | 「遅延損害金は…違約金の記載なし」 | 特約 chunk の vector score が main threshold(0.60) 以下・retry threshold(0.45) も際どい → inject なし |
+
+### 修正内容（コミット 5951a21）
+
+| ファイル | 変更 | 効果 |
+|---|---|---|
+| `src/rag_answerer.py` | G4: `section_id` 一致確認に限定（§1/§20 が pool にいても §3 inject を通す） | §3 regression 修正 |
+| `src/rag_answerer.py` | `_inject_tokuyaku_penalty_if_needed` 追加（cite_kind='special_terms' で deterministic fetch） | 特約④ 確実注入 |
+| `src/vector_store_manager.py` | `fetch_master_by_cite_kind` 追加 | ↑ で使用 |
+| `tests/test_important_matters_inject.py` | G4 回帰テスト + tokuyaku inject P1-P5 tests（8件追加） | カバレッジ |
+
+### テスト結果
+
+- 391 passed, 1 skipped（修正前 383 passed）
+- 8 件追加（G4 regression + tokuyaku inject guards）
+
+### 次スモーク受け入れ基準（再確認）
+
+| # | クエリ | 期待 |
+|---|---|---|
+| 1 | 水道代について教えて | KB fast path（変化なし） |
+| 2 | 重説の３項目では家賃はいくらですか | §3 chunk inject → 月額費用表言及 + To You 誘導 |
+| 3 | 違約金はいくらですか？ | 特約④ inject → 短期解約違約金の概要 + To You 誘導（金額は出さない） |
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する
