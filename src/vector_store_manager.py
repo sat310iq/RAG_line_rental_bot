@@ -485,6 +485,36 @@ class VectorStoreManager:
             )
             return []
 
+    def fetch_master_by_cite_kind(self, *, doc_kind: str, cite_kind: str) -> List[Document]:
+        """Fetch master chunks by doc_kind + cite_kind without embedding search.
+
+        Used to reliably inject special-terms (特約条項) chunks when vector scores are marginal.
+        Returns [] if the collection is unavailable or the query fails.
+        """
+        if not self.master_vector_store:
+            return []
+        try:
+            result = self.master_vector_store._collection.get(
+                where={"$and": [
+                    {"doc_kind": {"$eq": doc_kind}},
+                    {"cite_kind": {"$eq": cite_kind}},
+                ]},
+                limit=5,
+            )
+            docs: List[Document] = []
+            for content, meta in zip(
+                result.get("documents") or [],
+                result.get("metadatas") or [],
+            ):
+                if content is not None:
+                    docs.append(Document(page_content=content, metadata=meta or {}))
+            return docs
+        except Exception:
+            logger.exception(
+                "fetch_master_by_cite_kind failed doc_kind=%s cite_kind=%s", doc_kind, cite_kind
+            )
+            return []
+
     def get_collection_counts(self) -> Dict[str, int]:
         """Get document counts for each collection.
         

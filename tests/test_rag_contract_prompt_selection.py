@@ -72,6 +72,7 @@ def _build_rag_with_stubbed_pipeline(docs):
     from unittest.mock import MagicMock
     vsm_stub = MagicMock()
     vsm_stub.fetch_master_by_metadata.return_value = []
+    vsm_stub.fetch_master_by_cite_kind.return_value = []
     rag.vector_store_manager = vsm_stub
 
     rag._decide_answer_path = lambda question, forced_system="auto": {

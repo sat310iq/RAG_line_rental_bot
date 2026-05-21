@@ -73,12 +73,49 @@ def _inject_important_matters_section_if_needed(
     sid = extract_important_matters_section_id(question)
     if sid is None:  # G3
         return other_docs, None
-    if any(str((d.metadata or {}).get("doc_kind") or "") == "important_matters" for d in other_docs):  # G4
+    if any(  # G4: skip only when the exact target section is already in pool
+        str((d.metadata or {}).get("doc_kind") or "") == "important_matters"
+        and str((d.metadata or {}).get("section_id") or "") == sid
+        for d in other_docs
+    ):
         return other_docs, None
     chunks = vsm.fetch_master_by_metadata(doc_kind="important_matters", section_id=sid)
     if not chunks:
         return other_docs, f"important_matters_section_fetch_empty:sid={sid}"
     return chunks[:1] + other_docs, f"important_matters_section_fetch:sid={sid}"  # G6
+
+
+def _inject_tokuyaku_penalty_if_needed(
+    question: str,
+    other_docs: List[Document],
+    vsm: "VectorStoreManager",
+    *,
+    contract_source_q: bool,
+    enabled: bool,
+) -> Tuple[List[Document], Optional[str]]:
+    """Prepend 特約④（短期解約違約金）chunk when vector score is marginal.
+
+    Returns (docs, inject_reason_or_None).
+    P1: contract_source_q path only
+    P2: _is_tokuyaku_penalty_question — 違約金+金額 or 短期解約, not numbered 特約
+    P3: pool has no special_terms chunk containing the penalty clause yet
+    P4: enabled flag (reuses master_section_inject_enabled)
+    P5: inject at most 1 chunk
+    """
+    from src.retrieval_metadata_boost import _is_tokuyaku_penalty_question, _is_tokuyaku_penalty_chunk
+    if not contract_source_q:  # P1
+        return other_docs, None
+    if not enabled:  # P4
+        return other_docs, None
+    if not _is_tokuyaku_penalty_question(question):  # P2
+        return other_docs, None
+    if any(_is_tokuyaku_penalty_chunk(d) for d in other_docs):  # P3
+        return other_docs, None
+    chunks = vsm.fetch_master_by_cite_kind(doc_kind="contract", cite_kind="special_terms")
+    penalty_chunks = [c for c in chunks if _is_tokuyaku_penalty_chunk(c)]
+    if not penalty_chunks:
+        return other_docs, "tokuyaku_penalty_fetch_empty"
+    return penalty_chunks[:1] + other_docs, "tokuyaku_penalty_fetch:special_terms"  # P5
 
 
 class AnswerItem(BaseModel):
@@ -1699,6 +1736,15 @@ class RAGAnswerer:
         )
         if inject_reason:
             search_debug_info["important_matters_section_inject"] = inject_reason
+        other_docs, tokuyaku_inject_reason = _inject_tokuyaku_penalty_if_needed(
+            question,
+            other_docs,
+            self.vector_store_manager,
+            contract_source_q=contract_source_q,
+            enabled=self.config.master_section_inject_enabled,
+        )
+        if tokuyaku_inject_reason:
+            search_debug_info["tokuyaku_penalty_inject"] = tokuyaku_inject_reason
         master_boost_trace: List[Dict[str, Any]] = []
         if contract_source_q:
             other_docs, master_boost_trace = apply_master_document_boost(
