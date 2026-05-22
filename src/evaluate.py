@@ -312,6 +312,8 @@ def evaluate_question(
             # Routing observability (AIT-MET-01/02)
             "decision_path": getattr(answer, "decision_path", None),
             "latency_ms": getattr(answer, "latency_ms", None),
+            "retrieval_ms": getattr(answer, "retrieval_ms", None),
+            "generation_ms": getattr(answer, "generation_ms", None),
             "contract_source_q": bool(getattr(answer, "contract_source_q", False)),
             "input_tokens_est": (
                 (getattr(answer, "search_debug_info", None) or {}).get("llm_evidence_token_estimate", 0)

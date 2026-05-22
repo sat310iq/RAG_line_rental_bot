@@ -1,8 +1,11 @@
 """RAG answerer with Router Chain, Planner, Semantic Reranking, and structured output."""
 
+import logging
 import re
 import unicodedata
 import time
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
 from pydantic import BaseModel, Field
 from langchain.chat_models import init_chat_model
@@ -57,14 +60,14 @@ def _inject_important_matters_section_if_needed(
     """Prepend §N chunk to other_docs when all G1-G6 guards pass.
 
     Returns (docs, inject_reason_or_None).
-    G1: contract_source_q path only
+    G1: contract_source_q=True OR is_important_matters_question=True
     G2: is_important_matters_question
     G3: section_id extractable (not None)
     G4: pool has no important_matters chunk yet
     G5: enabled flag (MASTER_SECTION_INJECT_ENABLED env)
     G6: inject at most 1 chunk
     """
-    if not contract_source_q:  # G1
+    if not (contract_source_q or is_important_matters_question(question)):  # G1
         return other_docs, None
     if not enabled:  # G5
         return other_docs, None
@@ -1746,11 +1749,11 @@ class RAGAnswerer:
         if tokuyaku_inject_reason:
             search_debug_info["tokuyaku_penalty_inject"] = tokuyaku_inject_reason
         master_boost_trace: List[Dict[str, Any]] = []
-        if contract_source_q:
+        if contract_source_q or is_important_matters_question(question):
             other_docs, master_boost_trace = apply_master_document_boost(
                 question,
                 other_docs,
-                contract_source_q=True,
+                contract_source_q=contract_source_q,
             )
             search_debug_info["master_metadata_boost"] = master_boost_trace
 
@@ -1845,6 +1848,7 @@ class RAGAnswerer:
             if (d.metadata or {}).get("type") != "kb_faq"
         ]
         search_debug_info["request_latency_ms"] = round((time.perf_counter() - t0) * 1000.0, 3)
+        t1 = time.perf_counter()  # 検索段終端 — t0〜t1 が retrieval_ms
 
         if contract_source_q and not uses_master_source_docs(docs_for_answer):
             print("[INFO] contract_source_q: no master TXT chunks in evidence; returning not_found (no FAQ Responder).")
@@ -1887,7 +1891,8 @@ class RAGAnswerer:
                 response_schema, human_text = self.responder.generate(
                     question, docs_for_answer, user_inputs=None, tenant_info=tenant_info
                 )
-                
+                t2 = time.perf_counter()  # 生成段終端
+
                 # Extract evidence IDs from citations
                 evidence_ids = []
                 for citation in response_schema.citations:
@@ -1969,6 +1974,14 @@ class RAGAnswerer:
                     latency_ms=(time.perf_counter() - t0) * 1000.0,
                     retrieval_used=effective_retrieval_used and bool(docs_for_answer),
                 )
+                _retrieval_ms = round((t1 - t0) * 1000.0, 3)
+                _generation_ms = round((t2 - t1) * 1000.0, 3)
+                logger.info(
+                    "latency_breakdown retrieval=%.3fs generation=%.3fs total=%.3fs",
+                    _retrieval_ms / 1000, _generation_ms / 1000, t2 - t0,
+                )
+                object.__setattr__(answer, "retrieval_ms", _retrieval_ms)
+                object.__setattr__(answer, "generation_ms", _generation_ms)
                 object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
                 object.__setattr__(answer, "contract_source_q", contract_source_q)
                 return answer
@@ -2082,6 +2095,7 @@ class RAGAnswerer:
             "evidence": evidence_text,
             "tenant_context": tenant_context,
         })
+        t2 = time.perf_counter()  # 生成段終端
         answer = cast(AnswerSchema, raw_answer if isinstance(raw_answer, AnswerSchema) else AnswerSchema.model_validate(raw_answer))
         
         # Replace LLM-generated evidence with actual document IDs for evaluation
@@ -2149,6 +2163,14 @@ class RAGAnswerer:
             latency_ms=(time.perf_counter() - t0) * 1000.0,
             retrieval_used=effective_retrieval_used and bool(docs_for_answer),
         )
+        _retrieval_ms = round((t1 - t0) * 1000.0, 3)
+        _generation_ms = round((t2 - t1) * 1000.0, 3)
+        logger.info(
+            "latency_breakdown retrieval=%.3fs generation=%.3fs total=%.3fs",
+            _retrieval_ms / 1000, _generation_ms / 1000, t2 - t0,
+        )
+        object.__setattr__(answer, "retrieval_ms", _retrieval_ms)
+        object.__setattr__(answer, "generation_ms", _generation_ms)
         object.__setattr__(answer, "kb_master_retry_used", kb_master_retry_used)
         object.__setattr__(answer, "contract_source_q", contract_source_q)
 

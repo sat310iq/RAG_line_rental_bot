@@ -54,17 +54,29 @@ def _vsm_tokuyaku(fetch_returns: list[Document] | None = None) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# G1: contract_source_q must be True
+# G1: skip when neither contract_source_q nor is_important_matters_question
 # ---------------------------------------------------------------------------
-def test_g1_skips_when_not_contract_source() -> None:
+def test_g1_skips_when_not_contract_source_and_not_imp_matters() -> None:
     docs = [_contract_doc()]
     vsm = _vsm([_im_doc()])
     result, reason = _inject_important_matters_section_if_needed(
-        "重説の３項目では家賃はいくらですか", docs, vsm, contract_source_q=False, enabled=True
+        "違約金はいくらですか", docs, vsm, contract_source_q=False, enabled=True
     )
     assert result is docs
     assert reason is None
     vsm.fetch_master_by_metadata.assert_not_called()
+
+
+def test_g1_passes_for_imp_matters_query_without_contract_source_q() -> None:
+    """1-D: G1 relaxed — important_matters query injects even when contract_source_q=False."""
+    injected = _im_doc("3")
+    docs = [_contract_doc()]
+    vsm = _vsm([injected])
+    result, reason = _inject_important_matters_section_if_needed(
+        "重説の３項目では家賃はいくらですか", docs, vsm, contract_source_q=False, enabled=True
+    )
+    assert result[0] is injected
+    assert reason == "important_matters_section_fetch:sid=3"
 
 
 # ---------------------------------------------------------------------------

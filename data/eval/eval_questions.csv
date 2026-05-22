@@ -16,3 +16,9 @@ question,expected_category,expected_sources,expected_evidence_ids,relevant_doc_i
 退去、契約の解約について,deal,deal,契約_退去解約,moveout_cancel,書面またはオンラインでの解約申請・退去通知の手続きを案内する,FAQ KB,procedure
 車庫証明書などの証明書発行について,deal,deal,契約_証明書,certificate_issue,管理会社に所定の用紙を送付または持参で手続きする旨を案内する,FAQ KB,procedure
 玄関や共有廊下の電灯や自動ドアの不具合について,deal,deal,設備_共用部照明,shared_entrance_lighting,管理会社の連絡先（株式会社To You・TEL）を明示し、共用部の照明・電灯・自動ドアの不具合は管理会社へ連絡する旨を案内する,FAQ KB,procedure
+違約金はいくらですか？,master,master,グランマーレ大分空港契約書.txt p1,グランマーレ大分空港契約書.txt p1,"短期解約違約金は契約日より6ヶ月以内は賃料3ヶ月分（114,600円）",B-08 / LINE smoke 2 / 特約④ hot path,fact_lookup
+重説の３項目では家賃はいくら,master,master,重要事項説明書.txt p1,重要事項説明書.txt p1,重要事項説明書§3の月額費用表（家賃・共益費・水道料等）を案内する,B-01 / LINE smoke 3 / 重説§3 hot path,fact_lookup
+重要事項説明書の月額費用の内訳を教えてください,master,master,重要事項説明書.txt p1,重要事項説明書.txt p1,重要事項説明書§3の月額費用表（家賃・共益費・水道料等）を案内する,B-01 variant / is_important_matters=True path,fact_lookup
+特約④の短期解約違約金はいくらですか,master,master,グランマーレ大分空港契約書.txt p1,グランマーレ大分空港契約書.txt p1,6ヶ月以内3ヶ月分・12ヶ月以内2ヶ月分・24ヶ月以内1ヶ月分の短期解約違約金,B-08 variant / 特約④ explicit reference,fact_lookup
+重要事項説明書の賃貸借期間を教えてください,master,master,重要事項説明書.txt p1,重要事項説明書.txt p1,重要事項説明書§2（契約期間及び更新）に記載の賃貸借期間を案内する,重説§2 / general contract_source path,fact_lookup
+この物件は洪水のリスクはありますか？,master,master,重要事項説明書.txt p1,重要事項説明書.txt p1,ハザードマップに基づく洪水・水害リスクの説明を重要事項説明書から案内する,1-D検証 / contract_source_q=False is_imp_matters=True / ハザード系,fact_lookup

@@ -343,8 +343,6 @@ def handle_line_webhook(
                     post_to_slack(slack_payload)
                 continue
 
-            cf.clear_clarification_intent(line_user_id)
-
             if bundle is None or bundle.rag_answerer is None:
                 logger.warning("RAG bundle unavailable (init failed or not started); fallback reply")
                 ok = _reply_to_line(reply_token, error_message, channel_access_token)
@@ -373,8 +371,10 @@ def handle_line_webhook(
                 continue
 
             line_message = fallback_message
+            _rag_answer = None
             try:
                 answer = response.answer if hasattr(response, "answer") else response
+                _rag_answer = answer
                 if answer is None:
                     line_message = fallback_message
                     urgent = False
@@ -395,6 +395,19 @@ def handle_line_webhook(
                 mark_reply_success(message_id)
             else:
                 mark_reply_aborted(message_id)
+
+            # Update clarification state based on RAG decision_path
+            _rag_dp = getattr(_rag_answer, "decision_path", None)
+            if _rag_answer is not None and _rag_dp == "clarification":
+                _clar_intent = getattr(_rag_answer, "clarification_intent", None) or "contract_navigation"
+                cf.record_clarification_intent(
+                    line_user_id,
+                    _clar_intent,
+                    normalize_for_match(effective_text),
+                    [],
+                )
+            else:
+                cf.clear_clarification_intent(line_user_id)
 
             logger.info("cache_set_start")
             try:

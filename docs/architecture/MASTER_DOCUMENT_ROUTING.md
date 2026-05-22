@@ -4,9 +4,9 @@
 |------|------|
 | **対象読者** | 実装者（一次）、新規メンバー（オンボーディング）、意思決定者（§6・§7 のみで可） |
 | **ステータス** | **Reviewed** — 2026-05-16 所感反映・§8 アクション ID 付与 |
-| **バージョン** | **v0.3** |
+| **バージョン** | **v0.7** |
 | **作成日** | 2026-05-16 |
-| **最終更新** | 2026-05-16 |
+| **最終更新** | 2026-05-22 (v0.7) |
 | **レビュー** | ドキュメント所感 OK（残ギャップは §8.2 のアクションで追跡） |
 | **コード正本** | `src/contract_query_router.py`, `src/rag_answerer.py`, `src/interfaces/line/handler.py`, `src/kb_fast_path.py` |
 | **関連 ADR** | `CONTEXT.md` §6 ADR-001（Master TXT 正、KB は要約＋ルーティング） |
@@ -51,8 +51,10 @@
 
 | 段階 | KB fast path | `contract_source_q` の扱い |
 |------|--------------|---------------------------|
-| **LINE `handler.py`** | **常に最初** | **見ない** → FAQ に当たれば重説質問でも KB で終了しうる |
+| **LINE `handler.py`** | **`contract_source_q=False` のみ実行**（P0 対応済み）| `True` なら `KBFastPathResult(kind="miss")` で即 bypass → `RAGAnswerer.answer()` へ |
 | **`answer()` 内** | miss 後のみ | **True なら hit を採用しない** |
+
+> **P0 変更点（2026-05-18 `rental_rag_poc-7xd`）**: 旧来は LINE handler で全クエリが `try_kb_fast_path` を通過し、重説質問でも KB hit で終了しうる不具合があった。P0 で `handler.py` L272–287 に `is_contract_source_question()=True` → `KBFastPathResult(kind="miss")` bypass を追加し、契約ソース問は RAG へ直行するよう修正。
 
 ---
 
@@ -60,10 +62,13 @@
 
 ```mermaid
 flowchart TB
-  subgraph LINE["① LINE handler"]
-    L1[メッセージ] --> L2[try_kb_fast_path]
+  subgraph LINE["① LINE handler（P0 対応済み）"]
+    L1[メッセージ] --> L_cq{contract_source_q?}
+    L_cq -->|True| L_bypass[KB bypass → miss 扱い]
+    L_cq -->|False| L2[try_kb_fast_path]
     L2 -->|hit / clarification| L3[返信して終了]
     L2 -->|miss| L4[RAGAnswerer.answer]
+    L_bypass --> L4
   end
 
   subgraph ANSWER["② RAGAnswerer.answer"]
@@ -118,7 +123,7 @@ flowchart TB
 | contract_source_q | is_important_matters | 経路 | プロンプト（Master あり時） |
 |-------------------|----------------------|------|------------------------------|
 | False | False | **C. 一般 RAG** | `answer_prompt` |
-| False | True | **C. 一般 RAG**（boost は **contract_source 時のみ**適用） | 同上 |
+| False | True | **C. 一般 RAG**（**boost 発火**：section_id/rest-sort のみ。article/特約④ boost は contract_source 限定） | 同上 |
 | True | False | **B. 契約ソース RAG** | `contract_source_qa_prompt` |
 | True | True | **B + 重説 boost** | `contract_source_qa_prompt` |
 
@@ -243,7 +248,7 @@ flowchart TB
 | ~~P0~~ | ~~重説修正の **reindex + Cloud Run 再デプロイ**~~ | ~~今すぐ~~ | 小 | 低 | — | **✅ 完了** `rental_rag_poc-d28`（rev `line-webhook-20260518-2151`） |
 | ~~P1~~ | ~~`eval_log` にルーティング Tier 別メトリクス追加~~ | ~~今すぐ~~ | 小 | 低 | — | **✅ 完了** AIT-MET-02（2026-05-17） |
 | ~~P1~~ | ~~レイテンシ・トークン **1 回計測**~~ | ~~今すぐ~~ | 中 | 低 | — | **✅ 完了** AIT-MET-01（2026-05-17） |
-| P2 | `is_important_matters` 時も boost 適用 | **中長期** | 中 | 中 | P0 デプロイ後 | （設計確定後 Beads） |
+| ~~P2~~ | ~~`is_important_matters` 時も boost 適用~~ | ~~中長期~~ | 中 | 中 | — | **✅ 完了** 1-D（2026-05-22）。`master_top_k=0` 時は pool 空のため影響範囲は pool あり経路に限定 |
 | ~~P2~~ | ~~`deal_only` で `master_top_k=0` デフォルト~~ | ~~中長期~~ | 中 | 高 | — | **✅ 完了** AIT-TIER-01（2026-05-17） |
 | ~~P3~~ | ~~`_route_query` 方針決定~~ | ~~中長期~~ | 小 | 低 | — | **✅ 完了** AIT-RTE-01: 削除（2026-05-17） |
 | ~~P3~~ | ~~`_route_query` 配線（採用時）~~ | ~~中長期~~ | 大 | 高 | — | **N/A** AIT-RTE-01 削除のためクローズ |
@@ -292,3 +297,5 @@ flowchart TB
 - *v0.3 (2026-05-16): §8.2 に Beads チケット ID（BD 列）を追加*
 - *v0.4 (2026-05-17): AIT-RTE-01 決定記録追加（§7.2）— `_route_query` 削除・AIT-RTE-02/03 N/A クローズ*
 - *v0.5 (2026-05-19): §8.1 施策一覧を完了状態に更新（P0/P1/P2/P3 完了分を ✅ に）— rev `line-webhook-20260518-2151` 本番反映済み*
+- *v0.6 (2026-05-22): §3.3 テーブル更新（1-D: `is_important_matters=True` でも boost 発火）・§8.1 P2 完了マーク*
+- *v0.7 (2026-05-22): §1 LINE 表・§2 Mermaid を P0 bypass（`contract_source_q=True` → KB fast path skip）に更新（1-F 残り）*

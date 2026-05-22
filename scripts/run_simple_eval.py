@@ -253,6 +253,18 @@ def calculate_aggregate_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]
             p95_cidx = int(len(sorted_clat) * 0.95)
             metrics["contract_rag_latency_p95_ms"] = round(sorted_clat[p95_cidx], 1)
 
+    # Latency breakdown: retrieval vs generation (AIT-MET-01)
+    retrieval_lats = [r["retrieval_ms"] for r in successful_results if r.get("retrieval_ms") is not None]
+    if retrieval_lats:
+        sorted_rl = sorted(retrieval_lats)
+        metrics["retrieval_ms_p50"] = round(sorted_rl[len(sorted_rl) // 2], 1)
+        metrics["retrieval_ms_p95"] = round(sorted_rl[int(len(sorted_rl) * 0.95)], 1)
+    generation_lats = [r["generation_ms"] for r in successful_results if r.get("generation_ms") is not None]
+    if generation_lats:
+        sorted_gl = sorted(generation_lats)
+        metrics["generation_ms_p50"] = round(sorted_gl[len(sorted_gl) // 2], 1)
+        metrics["generation_ms_p95"] = round(sorted_gl[int(len(sorted_gl) * 0.95)], 1)
+
     # Input token estimates for contract source RAG (AIT-MET-01)
     contract_toks = [
         r["input_tokens_est"] for r in successful_results

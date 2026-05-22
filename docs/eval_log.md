@@ -413,6 +413,176 @@ print(f'契約ソース RAG  p95={m.get(\"contract_rag_latency_p95_ms\")}ms  tok
 
 ---
 
+## Sprint 2 Week 1｜2026-05-21
+
+### 1-0b `clear_clarification_intent` 修正（2026-05-22）
+
+**実装内容**: `handler.py` L346 の RAG 入場時無条件 `clear_clarification_intent` を削除。RAG 応答後に `decision_path` で分岐し、clarification → `record_clarification_intent`（"contract_navigation" フォールバック含む）、それ以外 → `clear_clarification_intent`。374 passed（回帰なし）。
+
+**2ターン因果確認**: ⏳ LINE スモーク「clarification → 契約RAG」2ターン再現で prior 引き継ぎを確認予定。B-08/B-01 との直接因果は低い（単発質問のため）。
+
+---
+
+### 1-0 レイテンシ内訳ログ — AnswerResult 影響調査（before マージ）
+
+`grep -r AnswerSchema` で確認した下流ファイルリスト（破壊的変更なし）:
+
+| ファイル | 用途 | 影響 |
+|----------|------|------|
+| `src/rag_answerer.py` | 定義・生成元 | `retrieval_ms`/`generation_ms` を `object.__setattr__` で追加 |
+| `src/evaluate.py` | `getattr(answer, "latency_ms")` パターンで読み取り | 同パターンで2フィールド追加（L314） |
+| `src/metrics.py` | `AnswerSchema` を type hint で参照のみ | 変更なし |
+| `src/rag_eval_utils.py` | `answer_body_text()` でテキスト参照のみ | 変更なし |
+| `scripts/run_simple_eval.py` | `latency_ms` を集計 | `retrieval_ms_p50/p95`・`generation_ms_p50/p95` 集計を追加 |
+
+**ユニットテスト**: 374 passed, 1 skipped（既存失敗 `test_granmare_important_matters_cases.py::juyo_rent` は本変更と無関係）
+
+---
+
+### 1-0 baseline 計測結果（2026-05-22 / eval 22問）
+
+**計測条件**: 新規追加 contract source 5問 + 既存 17問、`run_simple_eval.py`（full mode）
+
+#### latency 内訳（1-A 並列化前 baseline）
+
+| 指標 | 値 | 判定 |
+|------|-----|------|
+| `contract_rag_latency_p50_ms` | **3,979 ms** | — |
+| `contract_rag_latency_p95_ms` | **9,006 ms** | — |
+| `retrieval_ms_p50` | **311 ms** | retrieval は total の約 8%（集計母数 n=6、contract_source_rag のみ） |
+| `retrieval_ms_p95` | **2,490 ms** | retrieval は total の約 28%（同上） |
+| `generation_ms_p50` | **2,434 ms** | p50 では generation が約 61%（同上） |
+| `generation_ms_p95` | **5,305 ms** | p95 では generation が約 59%（同上） |
+
+#### 1-A 着手判断（計画 1-E 条件 A/B）
+
+| 条件 | 判定 | 根拠 |
+|------|------|------|
+| A: retrieval ≥ 30% | **No** | p50 では retrieval 8%、p95 でも 28% — 30% 未満 |
+| B: generation 支配（閾値 70%） | **傾向 Yes / 閾値未達** | p50 で generation 61%・p95 で 59%。契約RAG 6問の個別値は 48–59% で 70% 未満。gap（1,000–1,900 ms）は `_enforce_answer_structure`・PII チェック・cache 等の post-LLM 処理が未計測のため total に算入されていない。`retrieval_ms + generation_ms` が total を説明できない問が複数存在する |
+
+> **結論: 条件 A・B ともに計画の閾値を厳密には満たさないが、gap を含めても retrieval の短縮余地（p50 で全体の ~8%）では contract RAG 4秒の改善幅が小さすぎる。1-A〜C の Sprint 2 実装は No-Go。Sprint 3 に生成最適化（プロンプト短縮・モデル選択）と post-LLM オーバーヘッドの計測境界見直しを Escalate。**
+
+#### その他 KPI
+
+| KPI | 値 |
+|------|-----|
+| `avg_recall_at_5` | **1.000**（全22問） |
+| `avg_hallucination_fact_error` | **0.000** |
+| `contract_source_rag` routing rate | 27.3%（6/22問） |
+| `avg_answer_completeness` | 0.796 |
+
+---
+
+### 1-D `is_important_matters` boost 拡張（2026-05-22）
+
+**実装内容**: `contract_source_q=False` の場合でも `is_important_matters_question()=True` であれば boost が発火するよう G1 ガードを緩和。
+
+| ファイル | 変更箇所 | 内容 |
+|----------|----------|------|
+| `src/retrieval_metadata_boost.py` | G1 guard (L100) | `not contract_source_q` → `not (contract_source_q or _is_imp_matters)` |
+| `src/retrieval_metadata_boost.py` | 条件ゲート | article boost / tokuyaku penalty を `if contract_source_q:` に限定。section_id boost・rest sort は `_is_imp_matters` でも発火 |
+| `src/retrieval_metadata_boost.py` | module top | `IMPORTANT_MATTERS_BOOST_KEYWORDS` 定数追加（Phase 2a YAML 移管パス） |
+| `src/rag_answerer.py` | `_inject_important_matters_section_if_needed` G1 (L70) | 同様に `is_important_matters_question()` を OR 条件に追加 |
+| `src/rag_answerer.py` | boost 呼び出しガード (L1752) | `if contract_source_q:` → `if contract_source_q or is_important_matters_question(question):` |
+
+**テスト追加**:
+- `test_retrieval_metadata_boost.py`: 5件追加（rest_sort/section_id/article/tokuyaku/no-match の各ケース）
+- `test_important_matters_inject.py`: G1 テスト更新（query を非 imp_matters に変更）＋ G1 パステスト追加
+
+**ユニットテスト**: 394 passed, 1 skipped（既存失敗 `test_granmare_important_matters_cases.py::juyo_rent` は本変更前から存在する `重要事項説明書.txt` の working tree 変更によるもの）
+
+**期待効果（当初）**: ハザード・洪水等の `important_matters` 系クエリ（`is_contract_source_question()=False`）で `doc_kind=important_matters` chunk が先頭にソートされるようになる。
+
+#### 1-D eval 計測（2026-05-22 / 23問）
+
+ハザード問「この物件は洪水のリスクはありますか？」を追加して再実行:
+
+| 指標 | 値 | Δ(from baseline 22問) | 備考 |
+|------|-----|----------------------|------|
+| `avg_recall_at_5` | 0.957 | −0.043 | 洪水問 recall=0 が引き下げ（他 22問は全て 1.0） |
+| `avg_hallucination_fact_error` | 0.000 | 0 | |
+| `contract_rag_latency_p50_ms` | 5,524 ms | — | n=6 |
+| `retrieval_ms_p50` | 352 ms | — | n=6 |
+| `generation_ms_p50` | 3,755 ms | — | |
+
+**洪水問の個別結果**:
+
+| フィールド | 値 |
+|-----------|-----|
+| routing | fallback（None） |
+| recall_at_5 | 0.0 |
+| relevance | 0.5 |
+| answer_completeness | 0.5 |
+| retrieval_ms | None（RAG answerer に到達したが master 検索なし） |
+
+**根本原因（スコープ外）**: `rag_answerer.py` L1577: `contract_source_q=False` のとき `master_top_k=0` で master TXT が検索対象から除外される。pool に `doc_kind=important_matters` docs が入らないため、1-D の boost/inject ともに発火しない。
+
+**1-D の実効スコープ訂正**:
+- 有効: `is_contract_source_question()=False` でも master TXT が pool に入るケース（`force_master=True` の KB miss retry パスや `decided_kb_path` 後のリトライ）
+- 無効: 純粋な general RAG パス（`master_top_k=0`）— ハザード系単体クエリはここ
+
+**次のアクション（Sprint 3 候補）**: ハザード・重説系の `is_important_matters_question()=True` クエリに対し `master_top_k > 0` + `force_master=True` を設定する routing 拡張が必要。1-D はその前段整備（reorder は既に正しい状態）として機能する。
+
+---
+
+### 1-E 計測・完了基準 — B-08/B-01 chunk ランキング確認（2026-05-22）
+
+#### B-08 (tokuyaku_04) chunk ランキング
+
+`scripts/granmare_retrieval_debug_csv.py --fixture contract`
+
+| rank | doc_kind | article_number | section_id | used |
+|------|----------|---------------|-----------|------|
+| 1 | contract | 第26条 | — | 1 |
+| 2 | — | — | — | 0 |
+
+- `required_ok: 1` ✓
+- route: rag
+
+#### B-01 (juyo_rent) chunk ランキング
+
+`scripts/granmare_retrieval_debug_csv.py --fixture juyo`
+
+| rank | doc_kind | article_number | section_id | used |
+|------|----------|---------------|-----------|------|
+| 1 | important_matters | — | 20 | 1 |
+| 2 | contract | 第5条 | — | 1 |
+| 3 | contract | 第4条 | — | 1 |
+
+- `required_ok: 0` ✗
+- route: rag
+
+**根本原因**: fixture 問「重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。」は section 番号を含まない → `extract_important_matters_section_id()` = None → section_id boost 非発火 → §20 が vector 類似度で rank=1（§3 でなく §20 が retrieval で優先される）。eval_questions.csv の「重説の**３項目**では家賃はいくら」は sid="3" boost 発火 → recall=1.0 (対照)。
+
+#### 条件 C — B-08/B-01 内容合格判定
+
+| 問 | eval recall | completeness | relevance | overreach | 生成内容（eval 実測） | 条件 C |
+|----|------------|-------------|-----------|-----------|----------------------|--------|
+| 「違約金はいくらですか？」（B-08） | 1.0 | 1.0 | **0.5** | **0.5** | citation「特約 p.1」のみ。要約は「契約の違約金は、解約の時期により異なります。」— **特約④・段階別金額は未言及**（114,600円等の items なし） | **eval recall OK / 生成品質問題 / LINE 未確認** |
+| 「重説の３項目では家賃はいくら」（B-01） | 1.0 | 1.0 | 1.0 | 0.0 | 家賃31,700円を明示、§3 citation ✓（§20 も citation に含む） | **eval recall OK / LINE 未確認**（LINE 基準は金額非明示＋To You） |
+| 「特約④の短期解約違約金はいくらですか」 | 1.0 | 1.0 | **0.5** | 0.0 | 「特約④の短期解約違約金については、契約書内での記載が確認できませんでした」（**生成失敗**） | **不合格** |
+| juyo_rent fixture（section 番号なし variant） | — | — | — | — | required_ok=0（§20 rank=1） | **不合格** |
+
+#### スコアリング異常（要調査）
+
+「特約④の短期解約違約金はいくらですか」: `recall=1.0` / `completeness=1.0` / `relevance=0.5` の矛盾。生成内容は「記載なし」なのに completeness=1.0。`evaluate.py` の completeness スコアリングが生成テキストではなく retrieved docs の有無を評価している可能性。Sprint 3 で `evaluate.py` の completeness 計測ロジックを調査する。
+
+B-08 も同様: 生成は特約④未言及・曖昧要約なのに `completeness=1.0` / `overreach=0.5`（金額を出していないのに overreach 付与 — スコアリング定義の再確認が必要）。
+
+#### 条件 C 総合判定
+
+| 対象 | 判定 | 備考 |
+|------|------|------|
+| eval_questions.csv B-08 | **eval recall OK / 生成品質問題** | recall=1.0 だが特約④・金額段階未言及。LINE 基準（特約④概要・条項明示・To You・金額非明示）**未確認** |
+| eval_questions.csv B-01 | **eval recall OK / LINE 未確認** | 31,700円明示は eval 上 relevance=1.0 だが LINE 基準（金額非明示）との整合 **未確認** |
+| juyo_rent fixture（section 番号なし） | **未合格** | sid=None が原因、boost 前提条件不成立 |
+| "特約④" 明示問 | **生成品質問題** | recall=1.0 だが LLM が「記載なし」と回答 → Sprint 3 #1 |
+
+> **Sprint 2 Ship 判定（条件付きクローズ）**: 条件 C は **eval 自動指標のみ確認済み**。B-08/B-01 とも LINE スモーク未実施のため本番内容合格は **未確認**。eval の recall/completeness=1.0 は生成品質や LINE 基準（金額非明示・特約④言及）を保証しない。Sprint 3 冒頭で LINE 3問スモーク（水道 / B-08 違約金 / B-01 重説§3）＋ 1-0b 2ターンスモークを実施してから正式 Ship とすること。
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する

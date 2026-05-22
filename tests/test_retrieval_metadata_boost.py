@@ -200,3 +200,83 @@ def test_tokuyaku_penalty_boost_promotes_at_most_two_chunks() -> None:
     )
     promoted = [t for t in trace if t.get("boost_reason") == "tokuyaku_penalty_clause"]
     assert len(promoted) <= 2
+
+
+# ---------------------------------------------------------------------------
+# 1-D: is_important_matters boost runs even when contract_source_q=False
+# ---------------------------------------------------------------------------
+
+def test_important_matters_rest_sort_fires_without_contract_source_q() -> None:
+    """ハザード系クエリは contract_source_q=False でも important_matters を先頭にソート。"""
+    docs = [
+        _doc(24),
+        _im_doc("5", content="ハザードマップ 洪水リスク低"),
+        _im_doc("7", content="津波リスク低"),
+    ]
+    boosted, _ = apply_master_document_boost(
+        "洪水の危険性はありますか？",
+        docs,
+        contract_source_q=False,
+    )
+    assert boosted[0].metadata.get("doc_kind") == "important_matters"
+
+
+def test_section_id_boost_fires_without_contract_source_q() -> None:
+    """重説のN項目クエリで section_id boost が contract_source_q=False でも発火。"""
+    docs = [
+        _doc(24),
+        _im_doc("5"),
+        _im_doc("3", content="月額費用表 家賃31,700円"),
+    ]
+    boosted, trace = apply_master_document_boost(
+        "重説の３項目では家賃はいくらですか",
+        docs,
+        contract_source_q=False,
+    )
+    assert boosted[0].metadata.get("section_id") == "3"
+    reasons = [t.get("boost_reason", "") for t in trace]
+    assert any("section_exact:3" in r for r in reasons)
+
+
+def test_article_boost_not_fired_without_contract_source_q() -> None:
+    """contract_source_q=False では article boost は発火しない。"""
+    docs = [
+        _doc(4),
+        _doc(7),
+        _doc(3, article_number="第3条（使用目的）", content="居住のみを目的"),
+    ]
+    _, trace = apply_master_document_boost(
+        "重説の洪水リスクはどうなっていますか",
+        docs,
+        contract_source_q=False,
+    )
+    reasons = [t.get("boost_reason", "") for t in trace]
+    assert not any("article_seq_exact" in r or "article_exact" in r for r in reasons)
+
+
+def test_tokuyaku_penalty_boost_not_fired_without_contract_source_q() -> None:
+    """contract_source_q=False では tokuyaku_penalty boost は発火しない。"""
+    penalty_chunk = _tokuyaku_doc(
+        content="特約④（短期解約違約金）6ヶ月以内 114,600円",
+        article_number="特約④",
+    )
+    docs = [_doc(24), _im_doc("3"), penalty_chunk]
+    _, trace = apply_master_document_boost(
+        "洪水リスクと短期解約違約金はいくらですか",
+        docs,
+        contract_source_q=False,
+    )
+    reasons = [t.get("boost_reason", "") for t in trace]
+    assert not any("tokuyaku_penalty" in r for r in reasons)
+
+
+def test_no_boost_when_neither_contract_source_nor_imp_matters() -> None:
+    """どちらのフラグも立たない一般クエリでは docs 順序が変わらない。"""
+    docs = [_doc(4), _doc(7), _doc(3)]
+    boosted, trace = apply_master_document_boost(
+        "敷金はいくらですか",
+        docs,
+        contract_source_q=False,
+    )
+    assert boosted == docs
+    assert trace == []
