@@ -419,7 +419,7 @@ print(f'契約ソース RAG  p95={m.get(\"contract_rag_latency_p95_ms\")}ms  tok
 
 **実装内容**: `handler.py` L346 の RAG 入場時無条件 `clear_clarification_intent` を削除。RAG 応答後に `decision_path` で分岐し、clarification → `record_clarification_intent`（"contract_navigation" フォールバック含む）、それ以外 → `clear_clarification_intent`。374 passed（回帰なし）。
 
-**2ターン因果確認**: ⏳ LINE スモーク「clarification → 契約RAG」2ターン再現で prior 引き継ぎを確認予定。B-08/B-01 との直接因果は低い（単発質問のため）。
+**2ターン因果確認（2026-05-22）**: ✅ ローカルスモーク済み。Turn1「契約について」→ clarification（KB fast path）。Turn2「違約金はいくらですか？」→ RAG(master_txt/特約) 正常到達。Turn2 後 `prior_state=None`（RAG 後クリア確認）。B-08/B-01 との直接因果は低い（単発質問のため）が、1-0b のレグレッション（RAG 入場時の無条件 clear）は発生していないことを確認。
 
 ---
 
@@ -579,7 +579,52 @@ B-08 も同様: 生成は特約④未言及・曖昧要約なのに `completenes
 | juyo_rent fixture（section 番号なし） | **未合格** | sid=None が原因、boost 前提条件不成立 |
 | "特約④" 明示問 | **生成品質問題** | recall=1.0 だが LLM が「記載なし」と回答 → Sprint 3 #1 |
 
-> **Sprint 2 Ship 判定（条件付きクローズ）**: 条件 C は **eval 自動指標のみ確認済み**。B-08/B-01 とも LINE スモーク未実施のため本番内容合格は **未確認**。eval の recall/completeness=1.0 は生成品質や LINE 基準（金額非明示・特約④言及）を保証しない。Sprint 3 冒頭で LINE 3問スモーク（水道 / B-08 違約金 / B-01 重説§3）＋ 1-0b 2ターンスモークを実施してから正式 Ship とすること。
+#### LINE ローカルスモーク（2026-05-22 / `handle_line_webhook` + `skip_verify=True`）
+
+| qid | Q | 回答テキスト | 経路 | 判定 |
+|-----|---|-------------|------|------|
+| smoke_b08 | 「違約金はいくらですか？」 | 「6ヶ月以内は3ヶ月分、12ヶ月以内は2ヶ月分、24ヶ月以内は1ヶ月分」 | master_txt(特約) | **合格** |
+| smoke_b01 | 「重説の３項目では家賃はいくら」 | 「家賃は31,700円です。」 | master_txt(§3) | **合格** |
+| smoke_suido | 「水道費用についての連絡先」 | 水道料金 vs 水漏れ の clarification（2択） | KB fast path | **合格** |
+
+**計測**: smoke_b08=9,975ms / smoke_b01=3,978ms / smoke_suido=9ms
+
+**B-08 注記**: 金額数値（114,600円等）は出力されないが、3段階の倍率（3ヶ月分/2ヶ月分/1ヶ月分）は正確。eval の relevance=0.5 は summary 層の曖昧さによるもので、LINE reply 本文は内容合格。
+
+> **Sprint 2 条件 C 確定: 合格**（LINE ローカルスモーク 3問全通過）。残課題: 1-0b 2ターン clarification スモーク（prior 引き継ぎ確認）は Sprint 3 冒頭で実施。
+
+---
+
+## Sprint 3｜2026-05-22
+
+### Sprint 3 #1 — 特約④ `_is_tokuyaku_penalty_question` T3b 修正（2026-05-22）
+
+**問題**: 「特約④の短期解約違約金はいくらですか」→ `_is_tokuyaku_penalty_question` が False を返す（T3 の numbered 特約ガードが `_RE_TOKUYAKU_NUMBERED` で `特約④` にもマッチし inject を遮断）。
+
+**修正 (`src/retrieval_metadata_boost.py`)**: `_RE_TOKUYAKU04 = re.compile(r"特約\s*[④4]")` を追加し、T3b ルールを `_is_tokuyaku_penalty_question` 冒頭に挿入:
+- `has_penalty_topic AND _RE_TOKUYAKU04.search(q)` → `True`（T3 ガードの前に評価）
+- 他の番号付き特約（特約①〜③、⑤〜⑫）は従来どおり T3 で False
+
+**テスト結果（2026-05-22）**: 38 passed / 0 failed  
+- `test_tokuyaku_penalty_question_fires_on_explicit_tokuyaku04_penalty` ✓  
+- `test_tokuyaku_penalty_question_not_fired_when_numbered_tokuyaku` ✓（T3 backward compat）
+
+**eval 結果（2026-05-22 / run_simple_eval.py / 23問）**:
+
+| 問 | recall@5 | completeness | relevance | 生成内容（要約） | 判定 |
+|----|----------|-------------|-----------|-----------------|------|
+| 「特約④の短期解約違約金はいくらですか」（Q021） | **1.0** | **1.0** | **1.0** | 6ヶ月以内3ヶ月分(114,600円)・12ヶ月以内2ヶ月分(76,400円)・24ヶ月以内1ヶ月分(38,200円) — 3段階全て明示 ✓ | **合格** |
+
+**全体メトリクス（Sprint 3 #1 後）**:
+
+| 指標 | 値 | 前回比 |
+|------|----|--------|
+| avg_recall_at_5 | 0.9565 (22/23) | ±0 |
+| avg_answer_completeness | 0.7826 | ±0 |
+| avg_hallucination_fact_error | 0.0000 | ±0 |
+| completeness_gate_pass | True | — |
+
+> 洪水リスク問（Q023）は依然 recall=0（`master_top_k=0` routing 制限）。Sprint 3 routing 拡張候補。
 
 ---
 

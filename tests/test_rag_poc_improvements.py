@@ -68,6 +68,16 @@ def test_fact_lookup_completeness_explicit_unknown_penalized() -> None:
     assert calculate_answer_completeness(_fa("詳細は不明です。"), "fact_lookup") == 0.5
 
 
+def test_fact_lookup_completeness_not_found_in_contract_penalized() -> None:
+    assert (
+        calculate_answer_completeness(
+            _fa("特約④の短期解約違約金については、契約書内での記載が確認できませんでした。"),
+            "fact_lookup",
+        )
+        == 0.5
+    )
+
+
 def test_fact_lookup_completeness_short_no_contact_penalized() -> None:
     assert calculate_answer_completeness(_fa("お問い合わせ"), "fact_lookup") == 0.5
 

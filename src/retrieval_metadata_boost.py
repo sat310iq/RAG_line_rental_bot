@@ -47,16 +47,22 @@ def _meta_signature(d: Document) -> Tuple[Any, ...]:
     )
 
 
+# T3b: 特約④（NFKC 後は 特約4）+ penalty topic
+_RE_TOKUYAKU04 = re.compile(r"特約\s*[④4]")
+
+
 def _is_tokuyaku_penalty_question(question: str) -> bool:
-    """T2+T3: 違約金+金額 or 短期解約 かつ 番号付き特約が明示されていない場合に True。"""
+    """T2+T3: 違約金+金額 or 短期解約 queries; 特約④+penalty topic also fires inject/boost."""
     q = unicodedata.normalize("NFKC", question or "")
-    if _RE_TOKUYAKU_NUMBERED.search(q):  # T3: 番号付き特約は既存ロジック優先
+    has_penalty_topic = "短期解約" in q or bool(
+        "違約金" in q and _RE_PENALTY_AMOUNT.search(q)
+    )
+    # T3b: 特約④+penalty — blanket numbered guard blocked inject (Sprint 3 #1)
+    if has_penalty_topic and _RE_TOKUYAKU04.search(q):
+        return True
+    if _RE_TOKUYAKU_NUMBERED.search(q):  # T3: other numbered 特約 rely on article/section boost
         return False
-    if "短期解約" in q:  # T2
-        return True
-    if "違約金" in q and _RE_PENALTY_AMOUNT.search(q):  # T2
-        return True
-    return False
+    return has_penalty_topic
 
 
 def _is_tokuyaku_penalty_chunk(doc: Document) -> bool:

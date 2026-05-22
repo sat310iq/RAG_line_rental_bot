@@ -117,9 +117,14 @@ def test_tokuyaku_penalty_question_not_fired_for_general_iyakukin() -> None:
 
 
 def test_tokuyaku_penalty_question_not_fired_when_numbered_tokuyaku() -> None:
-    # T3: 番号付き特約が明示 → False（既存ロジック優先）
+    # T3: 番号付き特約（penalty topic なし）→ False
     assert _is_tokuyaku_penalty_question("特約④の内容を教えてください") is False
     assert _is_tokuyaku_penalty_question("特約⑤はどうなっていますか") is False
+
+
+def test_tokuyaku_penalty_question_fires_on_explicit_tokuyaku04_penalty() -> None:
+    # T3b: 特約④+短期解約/違約金 — inject/boost path (Sprint 3 #1)
+    assert _is_tokuyaku_penalty_question("特約④の短期解約違約金はいくらですか") is True
 
 
 # --- _is_tokuyaku_penalty_chunk 単体 ---

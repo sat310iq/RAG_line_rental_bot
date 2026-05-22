@@ -14,3 +14,4 @@
 {"id":"int-431cfc89","kind":"field_change","created_at":"2026-05-18T11:26:07.44186Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-ir7","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-10a9117e","kind":"field_change","created_at":"2026-05-18T13:14:35.023528Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-7xd","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-ce0f4e31","kind":"field_change","created_at":"2026-05-18T22:06:55.166957Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-d28","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-4f066e66","kind":"field_change","created_at":"2026-05-22T13:05:37.466919Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-wh5","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"T3b修正実装済み・eval確認済み (Sprint 3 #1 2026-05-22)"}}

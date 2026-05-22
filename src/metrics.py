@@ -401,6 +401,8 @@ def _fact_lookup_is_vague_escape(summary_text: str) -> bool:
         return True
     if "根拠情報が不足" in s or "情報が不足してい" in s:
         return True
+    if "記載がありません" in s or "記載が確認できません" in s:
+        return True
 
     # 短文: 具体ヒントがなければ減点（電話・会社名・十分な文量で救済）
     if len(s) < 20:

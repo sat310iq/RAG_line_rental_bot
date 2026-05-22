@@ -100,7 +100,7 @@ def _inject_tokuyaku_penalty_if_needed(
 
     Returns (docs, inject_reason_or_None).
     P1: contract_source_q path only
-    P2: _is_tokuyaku_penalty_question — 違約金+金額 or 短期解約, not numbered 特約
+    P2: _is_tokuyaku_penalty_question — 違約金+金額 or 短期解約; 特約④+penalty also fires
     P3: pool has no special_terms chunk containing the penalty clause yet
     P4: enabled flag (reuses master_section_inject_enabled)
     P5: inject at most 1 chunk

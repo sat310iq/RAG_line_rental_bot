@@ -250,6 +250,21 @@ def test_tokuyaku_inject_fires_and_prepends_chunk() -> None:
     vsm.fetch_master_by_cite_kind.assert_called_once_with(doc_kind="contract", cite_kind="special_terms")
 
 
+def test_tokuyaku_inject_fires_on_explicit_tokuyaku04_query() -> None:
+    injected = _tokuyaku_doc()
+    docs = [_contract_doc(26)]
+    vsm = _vsm_tokuyaku([injected])
+    result, reason = _inject_tokuyaku_penalty_if_needed(
+        "特約④の短期解約違約金はいくらですか",
+        docs,
+        vsm,
+        contract_source_q=True,
+        enabled=True,
+    )
+    assert result[0] is injected
+    assert reason == "tokuyaku_penalty_fetch:special_terms"
+
+
 def test_tokuyaku_inject_fetch_empty_returns_reason() -> None:
     docs = [_contract_doc(24)]
     vsm = _vsm_tokuyaku([])
