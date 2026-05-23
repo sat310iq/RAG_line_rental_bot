@@ -2063,8 +2063,13 @@ class RAGAnswerer:
         rel_detail: Optional[Dict[str, Any]] = None
         if effective_retrieval_used:
             rel_detail = self._relevance_guard_detail(question, docs_for_answer)
-        # Relevance guard bypassed for contract_source and for deterministic IM inject
-        # (keyword→section mapping uses exact fetch, so low-phrase-hit-rate is expected)
+        # Relevance guard bypassed for contract_source and for deterministic IM inject.
+        # IM bypass rationale: keyword→section map fetches exact chunks (§12, §11), so
+        # extract_question_terms returning a compound phrase like "洪水のリスク" will not
+        # match "洪水浸水想定区域" even though content is correct.
+        # Risk: if is_important_matters_question() ever fires on a non-IM query that happens
+        # to retrieve a master chunk, the guard is silently skipped. Mitigated by
+        # IMPORTANT_MATTERS_HINTS being narrow (hazard/重説/重要事項). Review if hints expand.
         _im_master = is_important_matters_question(question) and uses_master_source_docs(docs_for_answer)
         if (
             effective_retrieval_used

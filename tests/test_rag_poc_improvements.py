@@ -82,6 +82,36 @@ def test_fact_lookup_completeness_short_no_contact_penalized() -> None:
     assert calculate_answer_completeness(_fa("お問い合わせ"), "fact_lookup") == 0.5
 
 
+def _fa_items(summary: str, item_text: str) -> AnswerSchema:
+    """AnswerSchema with a custom items[0].text (for testing items-vs-summary discrepancy)."""
+    return AnswerSchema(
+        items=[AnswerItem(text=item_text, citation="doc.txt p1")],
+        summary=summary,
+        evidence=["doc.txt p1"],
+        next_action="",
+        caveats="",
+    )
+
+
+def test_fact_lookup_completeness_vague_in_items_not_summary_penalized() -> None:
+    """Bug 5w1: if summary is non-vague but items[0].text says '記載なし', score must be 0.5."""
+    # summary is a generic intro (non-vague); items text has the explicit "記載なし"
+    ans = _fa_items(
+        summary="特約④の短期解約違約金についてご回答します。",
+        item_text="特約④については契約書内での記載が確認できませんでした。",
+    )
+    assert calculate_answer_completeness(ans, "fact_lookup") == 0.5
+
+
+def test_fact_lookup_completeness_correct_items_not_penalized() -> None:
+    """Regression: short but factual item text must NOT be penalized."""
+    ans = _fa_items(
+        summary="短期解約違約金は6ヶ月以内3ヶ月分です。",
+        item_text="114,600円（賃料3ヶ月分）",
+    )
+    assert calculate_answer_completeness(ans, "fact_lookup") == 1.0
+
+
 def test_analyze_pii_policy_phone() -> None:
     t = "お問い合わせは 0978-68-1588 まで"
     r = analyze_pii(t)

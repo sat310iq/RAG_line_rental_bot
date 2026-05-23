@@ -497,6 +497,19 @@ def calculate_answer_completeness(
             summary_text = answer.summary
             if _fact_lookup_is_vague_escape(summary_text):
                 return 0.5
+            # Bug 5w1: summary may be a generic intro while items contain explicit "記載なし".
+            # Use narrow explicit patterns (not the full vague check) to avoid penalizing
+            # short but factual item texts like "114,600円" or "第3条".
+            _EXPLICIT_NOT_FOUND = (
+                "記載が確認できません",
+                "記載がありません",
+                "記載が見当たりません",
+                "確認できませんでした",
+                "記載を確認できませんでした",
+            )
+            first_item_text = answer.items[0].text if answer.items else ""
+            if any(p in first_item_text for p in _EXPLICIT_NOT_FOUND):
+                return 0.5
             return 1.0
         else:
             return 0.0

@@ -654,6 +654,35 @@ B-08 も同様: 生成は特約④未言及・曖昧要約なのに `completenes
 | avg_hallucination_fact_error | 0.0000 | 0.0000 | ±0 |
 | completeness_gate_pass | True | True | — |
 
+### Sprint 3 #4 — completeness scorer bug fix（5w1）（2026-05-23）
+
+**バグ**: `calculate_answer_completeness` (fact_lookup) が `answer.summary` のみチェック。`summary` が非 vague な汎用イントロ文でも `items[0].text` に "記載が確認できません" があると completeness=1.0 になる誤評価。
+
+**再現ケース**:
+```
+summary: "特約④の短期解約違約金についてご回答します。"  # vague パターンにマッチしない
+items[0].text: "特約④については契約書内での記載が確認できませんでした。"  # 明示的な記載なし
+→ 旧スコア: 1.0（誤）/ 期待スコア: 0.5
+```
+
+**修正 (`src/metrics.py`)**: `_EXPLICIT_NOT_FOUND` タプルを追加し、`summary` が非 vague でも `items[0].text` に明示的な "記載なし" パターンが含まれる場合は 0.5 に落とす。短い正答テキスト（"114,600円"、"第3条"）の誤ペナルティを避けるため全 vague 関数は使わず narrow パターンのみ使用。
+
+**テスト結果（2026-05-23）**: 412 passed / 0 failed  
+- `test_fact_lookup_completeness_vague_in_items_not_summary_penalized` ✓（バグ再現→修正確認）  
+- `test_fact_lookup_completeness_correct_items_not_penalized` ✓（回帰なし）
+
+**eval 結果（2026-05-23 / 23問）**:
+
+| 指標 | Before (Sprint 3 #2) | After (5w1) | 変化 |
+|------|------|------|------|
+| avg_recall_at_5 | 1.0000 | 1.0000 | ±0 |
+| avg_answer_completeness | 0.7826 | **0.8043** | +0.0217 |
+| fact_lookup avg_completeness | 0.9545 | **1.0000** | +0.0455 (LLM非決定性による) |
+| avg_hallucination_fact_error | 0.0000 | 0.0000 | ±0 |
+| completeness_gate_pass | True | True | — |
+
+> fact_lookup avg の変化は主に LLM 非決定性。バグ修正による「正答の誤ペナルティ」は発生していない（正答 items テキストは `_EXPLICIT_NOT_FOUND` パターンにマッチしない）。
+
 ---
 
 ## 改善サイクルテンプレート
