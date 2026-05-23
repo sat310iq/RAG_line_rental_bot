@@ -113,9 +113,9 @@ def test_g2_skips_when_not_important_matters_question() -> None:
 def test_g3_skips_when_sid_is_none() -> None:
     docs = [_contract_doc()]
     vsm = _vsm([_im_doc()])
-    # ハザードマップは important_matters だが sid=None
+    # "重説について" is is_important_matters but has no section number or hazard keyword → sid=None
     result, reason = _inject_important_matters_section_if_needed(
-        "ハザードマップで何か注意点は？", docs, vsm, contract_source_q=True, enabled=True
+        "重説について詳しく教えてください", docs, vsm, contract_source_q=True, enabled=True
     )
     assert result is docs
     assert reason is None
@@ -186,6 +186,31 @@ def test_g4_does_not_block_when_different_section_in_pool() -> None:
     )
     assert result[0] is injected_chunk
     assert reason == "important_matters_section_fetch:sid=3"
+
+
+def test_hazard_keyword_injects_section12() -> None:
+    """Sprint 3 #2: 洪水/ハザード query maps to sid=12 via keyword→section map → inject fires."""
+    injected = _im_doc("12")
+    docs = [_contract_doc(24)]
+    vsm = _vsm([injected])
+    result, reason = _inject_important_matters_section_if_needed(
+        "この物件は洪水のリスクはありますか？", docs, vsm, contract_source_q=False, enabled=True
+    )
+    assert result[0] is injected
+    assert reason == "important_matters_section_fetch:sid=12"
+    vsm.fetch_master_by_metadata.assert_called_once_with(doc_kind="important_matters", section_id="12")
+
+
+def test_hazard_keyword_tsunami_injects_section11() -> None:
+    """Sprint 3 #2: 津波 query maps to sid=11 (建物の存ずる区域)."""
+    injected = _im_doc("11")
+    docs = [_contract_doc(24)]
+    vsm = _vsm([injected])
+    result, reason = _inject_important_matters_section_if_needed(
+        "この物件の津波リスクを教えてください", docs, vsm, contract_source_q=False, enabled=True
+    )
+    assert result[0] is injected
+    assert reason == "important_matters_section_fetch:sid=11"
 
 
 # ---------------------------------------------------------------------------

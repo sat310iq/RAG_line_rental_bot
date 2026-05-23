@@ -59,9 +59,15 @@ def test_is_important_matters_question(question: str, expected: bool) -> None:
         ("重説の３項目・家賃について教えて", "3"),
         ("重要事項説明書の３項目では家賃はいくらですか", "3"),
         ("重要事項の1項目目は？", "1"),
-        # 「重要事項」文脈なし → None（数字があっても誤ヒットしない）
-        ("ハザードマップで何か注意点は？", None),
+        # Sprint 3 #2: 洪水/ハザード keyword → §12, 津波/土砂 → §11
+        ("ハザードマップで何か注意点は？", "12"),
+        ("この物件は洪水のリスクはありますか？", "12"),
+        ("高潮浸水エリアに入りますか", "12"),
+        ("津波の危険はありますか", "11"),
+        ("土砂災害警戒区域ですか", "11"),
+        # 「重要事項」文脈なし・ハザード系キーワードなし → None
         ("月々の支払いは合計いくら？", None),
+        ("重説について詳しく教えてください", None),
     ],
 )
 def test_extract_important_matters_section_id(question: str, expected_section: str | None) -> None:

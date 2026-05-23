@@ -624,7 +624,35 @@ B-08 も同様: 生成は特約④未言及・曖昧要約なのに `completenes
 | avg_hallucination_fact_error | 0.0000 | ±0 |
 | completeness_gate_pass | True | — |
 
-> 洪水リスク問（Q023）は依然 recall=0（`master_top_k=0` routing 制限）。Sprint 3 routing 拡張候補。
+> 洪水リスク問（Q023）は recall=0 → Sprint 3 #2 で修正。
+
+### Sprint 3 #2 — ハザード系クエリ deterministic inject（2026-05-23）
+
+**根本原因**: embedding score(§12 vs "洪水リスク") = -0.05（ほぼ無相関）。threshold 調整では解決不可。
+
+**3段構成の修正**:
+1. **`src/contract_query_router.py`**: `_IM_KEYWORD_SECTION_MAP` 追加（洪水/ハザード/浸水/高潮→§12、津波/土砂災害→§11）。`extract_important_matters_section_id` の末尾にキーワード検索 fallback を追加 → G3 (`sid=None` ガード) を通過可能に。
+2. **`src/rag_answerer.py` L1651-1660**: 空プール時に `is_important_matters_question()=True` なら `_inject_important_matters_section_if_needed` を事前実行（pre-inject）。inject 成功なら `pdf_docs` に注入し、fallback early-return を回避。
+3. **`src/rag_answerer.py` L2066-2075**: Relevance guard bypass 条件を拡張。`is_important_matters_question() AND uses_master_source_docs()` の場合も guard をスキップ（`extract_question_terms` が "洪水のリスク" という複合フレーズを返し §12 コンテンツにマッチしないため）。
+
+**テスト結果（2026-05-23）**: 410 passed / 0 failed  
+- `test_hazard_keyword_injects_section12` / `test_hazard_keyword_tsunami_injects_section11` 追加 ✓  
+- `test_g3_skips_when_sid_is_none` クエリ更新（ハザード系キーワードを含まない重説クエリ）✓
+
+**eval 結果（2026-05-23 / 23問）**:
+
+| 問 | Before | After | 生成内容（要約） |
+|----|--------|-------|-----------------|
+| Q023 「この物件は洪水のリスクはありますか？」 | recall=0.0 | **recall=1.0, completeness=1.0, relevance=1.0** | 「洪水浸水想定区域・高潮浸水想定区域に該当。雨水出水は該当なし」 |
+
+**全体メトリクス（Sprint 3 #2 後）**:
+
+| 指標 | Before | After | 変化 |
+|------|----|--------|------|
+| avg_recall_at_5 | 0.9565 (22/23) | **1.0000 (23/23)** | +0.0435 |
+| fact_lookup avg_recall | 0.9091 (10/11) | **1.0000 (11/11)** | +0.0909 |
+| avg_hallucination_fact_error | 0.0000 | 0.0000 | ±0 |
+| completeness_gate_pass | True | True | — |
 
 ---
 

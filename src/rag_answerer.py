@@ -49,6 +49,13 @@ from src.contract_rag_format import (
 from src.legal_term_resolver import LegalTermResolver
 
 
+def _important_matters_non_contract_master_search(
+    question: str, *, contract_source_q: bool
+) -> bool:
+    """Hazard/flood queries: is_important_matters but not contract_source → search master TXT."""
+    return is_important_matters_question(question) and not contract_source_q
+
+
 def _inject_important_matters_section_if_needed(
     question: str,
     other_docs: List[Document],
@@ -1535,6 +1542,13 @@ class RAGAnswerer:
         # Two-stage hierarchical search (deal CSV first, master TXT only if needed)
         kb_master_retry_used = False
         decided_kb_path = decision["decision_path"] in ("direct", "rule")
+        imp_matters_master_q = _important_matters_non_contract_master_search(
+            question, contract_source_q=contract_source_q
+        )
+        master_top_k_default = max(
+            int(getattr(self.config, "contract_source_master_top_k", 10) or 10),
+            int(self.config.rag_rerank_top_n),
+        )
         article_idx = extract_contract_article_index(question) if contract_source_q else None
         contract_source_retry_debug: Dict[str, Any] = {
             "attempted": False,
@@ -1551,10 +1565,15 @@ class RAGAnswerer:
                 question,
                 tenant_contract_id,
                 deal_top_k=self.config.rag_rerank_top_n,
-                master_top_k=max(
-                    int(getattr(self.config, "contract_source_master_top_k", 10) or 10),
-                    int(self.config.rag_rerank_top_n),
-                ),
+                master_top_k=master_top_k_default,
+                force_master=True,
+            )
+        elif decided_kb_path and imp_matters_master_q:
+            hierarchical_results = self._hierarchical_search(
+                question,
+                tenant_contract_id,
+                deal_top_k=self.config.rag_rerank_top_n,
+                master_top_k=master_top_k_default,
                 force_master=True,
             )
         elif decided_kb_path:
@@ -1567,14 +1586,11 @@ class RAGAnswerer:
             )
             hierarchical_results["master"] = []
         else:
-            _kwargs: Dict[str, Any] = {"force_master": contract_source_q}
-            if contract_source_q:
-                _kwargs["master_top_k"] = max(
-                    int(getattr(self.config, "contract_source_master_top_k", 10) or 10),
-                    int(self.config.rag_rerank_top_n),
-                )
-            else:
-                _kwargs["master_top_k"] = 0
+            force_master = contract_source_q or imp_matters_master_q
+            _kwargs: Dict[str, Any] = {
+                "force_master": force_master,
+                "master_top_k": master_top_k_default if force_master else 0,
+            }
             hierarchical_results = self._hierarchical_search(
                 question, tenant_contract_id, **_kwargs
             )
@@ -1599,7 +1615,7 @@ class RAGAnswerer:
                 deal_top_k=self.config.rag_rerank_top_n,
                 master_top_k=max(1, int(self.config.rag_rerank_top_n)),
                 pdf_threshold=retry_pdf_thr,
-                force_master=contract_source_q,
+                force_master=contract_source_q or imp_matters_master_q,
             )
             csv_docs = hierarchical_results.get("deal", [])
             pdf_docs = hierarchical_results.get("master", [])
@@ -1631,6 +1647,18 @@ class RAGAnswerer:
                     contract_source_retry_debug["added_docs"] = added_docs
                     contract_source_retry_debug["retry_added"] = added_docs
                 contract_source_retry_debug["after_count"] = len(pdf_docs)
+
+        # Sprint 3 #2: for is_important_matters queries where retrieval returned nothing,
+        # try deterministic inject (keyword→section→VSM fetch) before falling back.
+        _im_pre_inject_reason: Optional[str] = None
+        if not csv_docs and not pdf_docs and is_important_matters_question(question):
+            pre_injected, _im_pre_inject_reason = _inject_important_matters_section_if_needed(
+                question, [], self.vector_store_manager,
+                contract_source_q=contract_source_q,
+                enabled=self.config.master_section_inject_enabled,
+            )
+            if pre_injected:
+                pdf_docs = pre_injected
 
         if not csv_docs and not pdf_docs:
             if contract_source_q:
@@ -1698,6 +1726,8 @@ class RAGAnswerer:
             "contract_source_retry": contract_source_retry_debug,
             "request_latency_ms": round((time.perf_counter() - t0) * 1000.0, 3),
         }
+        if _im_pre_inject_reason:
+            search_debug_info["important_matters_pre_inject"] = _im_pre_inject_reason
         
         # Filter tenant-specific information
         all_documents = self._filter_tenant_info(all_documents, tenant_contract_id)
@@ -2033,11 +2063,15 @@ class RAGAnswerer:
         rel_detail: Optional[Dict[str, Any]] = None
         if effective_retrieval_used:
             rel_detail = self._relevance_guard_detail(question, docs_for_answer)
+        # Relevance guard bypassed for contract_source and for deterministic IM inject
+        # (keyword→section mapping uses exact fetch, so low-phrase-hit-rate is expected)
+        _im_master = is_important_matters_question(question) and uses_master_source_docs(docs_for_answer)
         if (
             effective_retrieval_used
             and rel_detail
             and rel_detail.get("low_relevance_signal")
             and not (contract_source_q and uses_master_source_docs(docs_for_answer))
+            and not _im_master
         ):
             msg = "該当する情報を確認できませんでした。所定の窓口へお問い合わせください。"
             answer = AnswerSchema(
