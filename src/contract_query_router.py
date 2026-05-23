@@ -44,9 +44,12 @@ IMPORTANT_MATTERS_HINTS: tuple[str, ...] = (
     "重説",
 )
 
-# Keyword-to-section mapping for deterministic inject (§12 = 水害ハザードマップ, §11 = 建物の存ずる区域)
+# Keyword-to-section mapping for deterministic inject.
+# §3 = 賃料及び賃料以外に授受される金額, §11 = 建物の存ずる区域, §12 = 水害ハザードマップ
 # Used by extract_important_matters_section_id when no explicit section number is found.
 _IM_KEYWORD_SECTION_MAP: tuple[tuple[str, str], ...] = (
+    ("水道料", "3"),
+    ("月額費用", "3"),
     ("洪水", "12"),
     ("ハザード", "12"),
     ("水防法", "12"),
@@ -190,8 +193,8 @@ def extract_contract_article_index(question: str) -> Optional[int]:
 def extract_important_matters_section_id(question: str) -> Optional[str]:
     """Parse section number for 重要事項の12 / 重説の3項目 / 12番 style queries (NFKC digits only).
 
-    Falls back to keyword-to-section mapping (_IM_KEYWORD_SECTION_MAP) for hazard/flood queries
-    that omit an explicit section number (e.g. 洪水リスク → §12).
+    Falls back to keyword-to-section mapping (_IM_KEYWORD_SECTION_MAP) for queries
+    that omit an explicit section number (e.g. 洪水リスク → §12, 水道料 → §3).
     """
     q = _normalize_question(question)
     m = _RE_SECTION_NUM_JUYO.search(q)

@@ -683,6 +683,39 @@ items[0].text: "特約④については契約書内での記載が確認でき�
 
 > fact_lookup avg の変化は主に LLM 非決定性。バグ修正による「正答の誤ペナルティ」は発生していない（正答 items テキストは `_EXPLICIT_NOT_FOUND` パターンにマッチしない）。
 
+### Sprint 3 #3 — juyo_rent §3 deterministic inject（oj4）（2026-05-24）
+
+**対象クエリ**: 「重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。」（`granmare_important_matters_cases.yaml` id=juyo_rent）
+
+**根本原因**: クエリに section 番号なし → `extract_important_matters_section_id()` = None → §3 inject 非発火。IM §3 の embedding score（text-embedding-3-small）= 0.1134 で vector 検索閾値（0.60）を大幅に下回る。契約書 TXT の第5条・第6条（共益費・賃料関連）が score=0.48–0.52 で上位を占め §3 が retrieval されない。
+
+**Before**:
+| 指標 | 値 |
+|------|------|
+| juyo_rent `required_ok` | 0（§20 が rank=1、§3 未取得） |
+| eval avg_recall_at_5 | 1.0000（23問） |
+
+**修正 (`src/contract_query_router.py`)**: `_IM_KEYWORD_SECTION_MAP` に §3 エントリを追加。
+
+```python
+("水道料", "3"),   # oj4 クエリの特徴語
+("月額費用", "3"), # Q020 変種（重要事項説明書の月額費用の内訳）向け
+```
+
+「水道料」は §3（賃料及び賃料以外に授受される金額）固有の費用種別であり、`is_important_matters_question()` でゲートされる文脈での false positive リスクは低い。
+
+**After**:
+| 指標 | 値 |
+|------|------|
+| juyo_rent `required_ok` | **1**（§3 inject 発火、家賃・共益費・水道料の金額を正答） |
+| juyo_hazard `required_ok` | 1（回帰なし） |
+| eval avg_recall_at_5 | **1.0000**（23問、回帰なし） |
+| eval avg_answer_completeness | 0.8043（変化なし） |
+
+**テスト結果（2026-05-24）**: 74 passed / 0 failed（unit）
+- `test_extract_important_matters_section_id["重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。"]` → "3" ✓
+- `test_extract_important_matters_section_id["月額費用の内訳を教えてください"]` → "3" ✓
+
 ---
 
 ## 改善サイクルテンプレート
