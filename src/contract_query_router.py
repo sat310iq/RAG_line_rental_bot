@@ -44,19 +44,129 @@ IMPORTANT_MATTERS_HINTS: tuple[str, ...] = (
     "重説",
 )
 
-# Keyword-to-section mapping for deterministic inject.
-# §3 = 賃料及び賃料以外に授受される金額, §11 = 建物の存ずる区域, §12 = 水害ハザードマップ
+# Keyword-to-section mapping for deterministic inject into 重要事項説明書 (§1–§21).
 # Used by extract_important_matters_section_id when no explicit section number is found.
+# Order: longer/more-specific phrases first to avoid premature short-keyword match.
 _IM_KEYWORD_SECTION_MAP: tuple[tuple[str, str], ...] = (
+    # §1 登記簿に記録された事項
+    ("所有権移転", "1"),
+    ("登記簿", "1"),
+    ("抵当権", "1"),
+    # §2 契約期間及び更新に関する事項
+    ("普通借家", "2"),
+    ("定期借家", "2"),
+    ("更新料", "2"),
+    # §3 賃料及び賃料以外に授受される金額
     ("水道料", "3"),
     ("月額費用", "3"),
-    ("洪水", "12"),
-    ("ハザード", "12"),
-    ("水防法", "12"),
-    ("浸水", "12"),
-    ("高潮", "12"),
-    ("津波", "11"),
+    ("初期費用", "3"),
+    # §4 水道・電気・ガスの供給施設及び排水施設の整備状況
+    ("排水施設", "4"),
+    ("供給施設", "4"),
+    # §5 建物の設備の整備状況
+    ("設備の整備", "5"),
+    # §6 建物建築の工事完了時における形状、構造等
+    ("未完成物件", "6"),
+    # §7 法令に基づく制限の概要
+    ("建ぺい率", "7"),
+    ("容積率", "7"),
+    ("用途地域", "7"),
+    ("法令制限", "7"),
+    # §8 契約の解除に関する事項
+    ("借主の解約予告", "8"),
+    ("貸主による解除", "8"),
+    ("無催告解除", "8"),
+    # §9 損害賠償額の予定または違約金に関する事項
+    ("損害賠償額の予定", "9"),
+    # §10 支払金または預り金の保全措置の概要
+    ("保全措置", "10"),
+    ("預り金", "10"),
+    # §11 当該建物の存ずる区域
     ("土砂災害", "11"),
+    ("津波", "11"),
+    # §12 水防法の規定による水害ハザードマップ
+    ("高潮", "12"),
+    ("浸水", "12"),
+    ("水防法", "12"),
+    ("ハザード", "12"),
+    ("洪水", "12"),
+    # §13 石綿使用調査内容
+    ("アスベスト", "13"),
+    ("石綿", "13"),
+    # §14 耐震診断の内容
+    ("耐震診断", "14"),
+    ("耐震", "14"),
+    # §15 建物状況調査の内容
+    ("インスペクション", "15"),
+    ("建物状況調査", "15"),
+    # §16 用途その他の利用の制限に関する事項
+    ("用途制限", "16"),
+    # §17 敷金の精算に関する事項
+    ("敷金の精算", "17"),
+    # §18 金銭の貸借のあっせん
+    ("金銭の貸借", "18"),
+    # §19 建物管理の委託先
+    ("管理の委託", "19"),
+    ("委託先", "19"),
+    # §21 供託所等に関する説明
+    ("供託所", "21"),
+    ("供託", "21"),
+)
+
+# Keyword-to-article mapping for 賃貸借契約書（第1条–第26条）.
+# Used by extract_contract_article_index when no explicit 第X条 reference is found.
+# Order: longer/more-specific phrases first.
+_CONTRACT_KEYWORD_ARTICLE_MAP: tuple[tuple[str, int], ...] = (
+    # 第3条 使用目的は detect_usage_purpose_intent で既に処理 → ここでは定義しない
+    # 第4条 賃料
+    ("賃料の支払方法", 4),
+    ("家賃の支払", 4),
+    # 第5条 管理費・共益費等
+    ("共益費", 5),
+    ("管理費", 5),
+    # 第6条 諸経費の負担
+    ("諸経費", 6),
+    # 第7条 敷金
+    ("敷金の返還", 7),
+    ("敷金", 7),
+    # 第8条 反社会的勢力の排除
+    ("反社会的勢力", 8),
+    ("暴力団", 8),
+    # 第9条 善管注意義務
+    ("善管注意義務", 9),
+    # 第10条 禁止又は制限される行為
+    ("禁止行為", 10),
+    ("禁止事項", 10),
+    # 第11条 契約期間中の修繕
+    ("修繕", 11),
+    # 第12条 一部滅失等による賃料の減額等
+    ("一部滅失", 12),
+    ("賃料の減額", 12),
+    # 第13条 契約の解除
+    ("催告による解除", 13),
+    # 第14条 解約の申し入れ
+    ("退去通知", 14),
+    ("解約予告", 14),
+    # 第16条 明渡し
+    ("明渡し", 16),
+    # 第17条 原状回復義務等
+    ("原状回復", 17),
+    # 第18条 更新
+    ("更新手続", 18),
+    # 第19条 有益費の償還等
+    ("有益費", 19),
+    # 第20条 立入り
+    ("立入検査", 20),
+    ("立入り", 20),
+    # 第21条 連帯保証人
+    ("連帯保証人", 21),
+    # 第22条 家賃債務保証業者の提供する保証
+    ("家賃債務保証", 22),
+    # 第24条 遅延損害金
+    ("遅延損害金", 24),
+    # 第25条 合意管轄裁判所
+    ("管轄裁判所", 25),
+    ("合意管轄", 25),
 )
 
 
@@ -186,8 +296,15 @@ def is_important_matters_question(question: str) -> bool:
 
 
 def extract_contract_article_index(question: str) -> Optional[int]:
-    """Parse 本文第17条 / 第4条 style references; returns int article index or None."""
-    return detect_article_reference(question)
+    """Parse 本文第17条 / 第4条 style references; falls back to _CONTRACT_KEYWORD_ARTICLE_MAP."""
+    result = detect_article_reference(question)
+    if result is not None:
+        return result
+    q = _normalize_question(question)
+    for kw, article_idx in _CONTRACT_KEYWORD_ARTICLE_MAP:
+        if kw in q:
+            return article_idx
+    return None
 
 
 def extract_important_matters_section_id(question: str) -> Optional[str]:

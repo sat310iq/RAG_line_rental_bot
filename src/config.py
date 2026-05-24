@@ -108,6 +108,17 @@ class Config(BaseSettings):
             "when G1-G6 conditions are met (PR-1b). Set to false to disable without redeploy."
         ),
     )
+    graph_rag_enabled: bool = Field(
+        default=False,
+        description=(
+            "GRAPHRAG-POC-01: If True, expand retrieval pool with 1-hop sidecar_graph edges "
+            "after hierarchical search. Set GRAPH_RAG_ENABLED=1 to enable."
+        ),
+    )
+    graph_rag_sidecar_path: str = Field(
+        default="data/sidecar_graph.yaml",
+        description="Path to sidecar_graph.yaml relative to project root.",
+    )
     kb_empty_try_master_pdf: bool = Field(
         default=True,
         description="If True and KB path had no deal+master hits, retry hierarchical search with master TXT enabled.",

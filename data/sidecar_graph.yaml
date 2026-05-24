@@ -1,0 +1,351 @@
+# GraphRAG Sidecar Graph — 契約書 ↔ 重説 対応グラフ
+# GRAPHRAG-POC-01 (rental_rag_poc-uye.1)
+#
+# 正本: data/documents/グランマーレ大分空港契約書.txt
+#       data/documents/重要事項説明書.txt
+#
+# 設計方針:
+#   重説は契約書の内容を入居者向けに説明した資料。同一トピックはグラフ上で双方向接続する。
+#   ノード識別: doc_kind + cite_kind + (任意) cite_label_contains / section_id
+#   動作: pool 内の retrieved doc が from にマッチ → to の chunk を 1-hop 追加
+#
+# 契約書のみ（重説に独立§なし）:
+#   - 原状回復: 第17条 ↔ 別表第1 ↔ 設備経過年数表（MH 系）
+#   - 重説 §17 は「敷金精算」であり契約 第17条（原状回復）とは別トピック
+#
+# 重説のみ / 弱対応（グラフ未接続）:
+#   - §1 抵当権補足, §11 区域, §12 ハザード, §13–15 石綿・耐震・建物調査, §21 供託
+#
+# 現行アーキテクチャ:
+#   - keyword→section inject (_IM_KEYWORD_SECTION_MAP) は KW-* 問いを引き続き担当
+#   - graph expand は hierarchical search 後・rerank 前に pool を拡張するのみ
+
+edges:
+  # ── 契約書内（multi-hop / MH 系）────────────────────────────────────────
+
+  # MH-01/02/03/04: 第17条（原状回復義務）↔ 別表第1
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第17条"
+    to:
+      doc_kind: contract
+      cite_kind: appendix
+      cite_label_contains: "別表第1"
+    rel: defines_restoration_annex
+
+  - from:
+      doc_kind: contract
+      cite_kind: appendix
+      cite_label_contains: "別表第1"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第17条"
+    rel: referenced_by_article_17
+
+  # MH-05: 別表第1 → 設備経過年数表
+  - from:
+      doc_kind: contract
+      cite_kind: appendix
+      cite_label_contains: "別表第1"
+    to:
+      doc_kind: contract
+      cite_kind: appendix
+      cite_label_contains: "設備の経過年数"
+    rel: depreciation_table_ref
+
+  # MH-06: 特約 → 退去時クリーニング費用表
+  - from:
+      doc_kind: contract
+      cite_kind: special_terms
+    to:
+      doc_kind: contract
+      cite_kind: preamble_other
+      cite_label_contains: "クリーニング"
+    rel: cleaning_fee_ref
+
+  # ── §2 契約期間・更新 ↔ 第2条・第18条 ───────────────────────────────────
+
+  - from:
+      doc_kind: important_matters
+      section_id: "2"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第2条"
+    rel: cross_doc_contract_term
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第2条"
+    to:
+      doc_kind: important_matters
+      section_id: "2"
+    rel: cross_doc_contract_term
+
+  - from:
+      doc_kind: important_matters
+      section_id: "2"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第18条"
+    rel: cross_doc_renewal
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第18条"
+    to:
+      doc_kind: important_matters
+      section_id: "2"
+    rel: cross_doc_renewal
+
+  # ── §3 賃料・費用 ↔ 頭書・第4条・第5条・特約 ─────────────────────────────
+  # XD-01, XD-02, KW-02/03
+
+  - from:
+      doc_kind: important_matters
+      section_id: "3"
+    to:
+      doc_kind: contract
+      cite_kind: head
+      cite_label_contains: "賃料"
+    rel: cross_doc_fee_preamble
+
+  - from:
+      doc_kind: contract
+      cite_kind: head
+      cite_label_contains: "賃料"
+    to:
+      doc_kind: important_matters
+      section_id: "3"
+    rel: cross_doc_fee_preamble
+
+  - from:
+      doc_kind: important_matters
+      section_id: "3"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第4条"
+    rel: cross_doc_rent_article
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第4条"
+    to:
+      doc_kind: important_matters
+      section_id: "3"
+    rel: cross_doc_rent_article
+
+  - from:
+      doc_kind: important_matters
+      section_id: "3"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第5条"
+    rel: cross_doc_common_fee
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第5条"
+    to:
+      doc_kind: important_matters
+      section_id: "3"
+    rel: cross_doc_common_fee
+
+  - from:
+      doc_kind: important_matters
+      section_id: "3"
+    to:
+      doc_kind: contract
+      cite_kind: special_terms
+    rel: cross_doc_fee_special_terms
+
+  - from:
+      doc_kind: contract
+      cite_kind: special_terms
+    to:
+      doc_kind: important_matters
+      section_id: "3"
+    rel: cross_doc_fee_special_terms
+
+  # ── §8 解除・解約 ↔ 第13条・第14条 ─────────────────────────────────────
+  # XD-03
+
+  - from:
+      doc_kind: important_matters
+      section_id: "8"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第13条"
+    rel: cross_doc_termination_by_landlord
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第13条"
+    to:
+      doc_kind: important_matters
+      section_id: "8"
+    rel: cross_doc_termination_by_landlord
+
+  - from:
+      doc_kind: important_matters
+      section_id: "8"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第14条"
+    rel: cross_doc_termination_notice
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第14条"
+    to:
+      doc_kind: important_matters
+      section_id: "8"
+    rel: cross_doc_termination_notice
+
+  # ── §9 損害賠償・遅延損害金 ↔ 第16条・第24条 ────────────────────────────
+
+  - from:
+      doc_kind: important_matters
+      section_id: "9"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第16条"
+    rel: cross_doc_vacate_damages
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第16条"
+    to:
+      doc_kind: important_matters
+      section_id: "9"
+    rel: cross_doc_vacate_damages
+
+  - from:
+      doc_kind: important_matters
+      section_id: "9"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第24条"
+    rel: cross_doc_late_fee
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第24条"
+    to:
+      doc_kind: important_matters
+      section_id: "9"
+    rel: cross_doc_late_fee
+
+  # ── §16 用途・利用制限 ↔ 第3条・第10条 ───────────────────────────────────
+
+  - from:
+      doc_kind: important_matters
+      section_id: "16"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第3条"
+    rel: cross_doc_usage_purpose
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第3条"
+    to:
+      doc_kind: important_matters
+      section_id: "16"
+    rel: cross_doc_usage_purpose
+
+  - from:
+      doc_kind: important_matters
+      section_id: "16"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第10条"
+    rel: cross_doc_prohibited_acts
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第10条"
+    to:
+      doc_kind: important_matters
+      section_id: "16"
+    rel: cross_doc_prohibited_acts
+
+  # ── §17 敷金精算 ↔ 第7条（敷金）────────────────────────────────────────
+  # 注意: 契約 第17条（原状回復）とは別トピック
+
+  - from:
+      doc_kind: important_matters
+      section_id: "17"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第7条"
+    rel: cross_doc_deposit_settlement
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第7条"
+    to:
+      doc_kind: important_matters
+      section_id: "17"
+    rel: cross_doc_deposit_settlement
+
+  # ── §20 特約事項 ↔ 契約書 特約条項 ─────────────────────────────────────
+  # XD-04, XD-05
+
+  - from:
+      doc_kind: important_matters
+      section_id: "20"
+    to:
+      doc_kind: contract
+      cite_kind: special_terms
+    rel: cross_doc_special_terms_mirror
+
+  - from:
+      doc_kind: contract
+      cite_kind: special_terms
+    to:
+      doc_kind: important_matters
+      section_id: "20"
+    rel: cross_doc_special_terms_mirror
+
+  # 特約⑫（禁煙・原状回復）: 契約 第17条+別表 との橋渡し（§20 経由で到達可能）
+  - from:
+      doc_kind: important_matters
+      section_id: "20"
+    to:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第17条"
+    rel: cross_doc_smoking_restoration
+
+  - from:
+      doc_kind: contract
+      cite_kind: article
+      cite_label_contains: "第17条"
+    to:
+      doc_kind: important_matters
+      section_id: "20"
+    rel: cross_doc_smoking_restoration

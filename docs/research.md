@@ -99,6 +99,9 @@
 | OQ-003 | needs_clarification閾値の最適値（LINEテスト後） | 中 | Sprint 2 |
 | OQ-004 | Semantic Cacheの物件固有クエリスキップ実装方法 | 低 | Backlog |
 | OQ-006 | 弁護士法72条フィルタが「条項の紹介」と「法的断定」を正しく区別できているか（B-6テスト前提） | 高 | LINEテスト前 |
+| OQ-007 | GraphRAG vs sidecar_graph：multi-hop（第17条→別表）でどちらが ROI 高いか | 中 | rental_rag_poc-uye / **rental_rag_poc-uye.1** |
+
+**GraphRAG PoC 問いリスト:** `docs/research/GRAPHRAG_POC_EVAL_QUESTIONS.md` / `data/eval/graphrag_poc_questions.csv`（Tier-1 12問）
 
 ### 解決済みOpen Questions
 

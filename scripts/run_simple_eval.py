@@ -331,6 +331,12 @@ def main():
         default=None,
         help="Override path to eval questions CSV",
     )
+    parser.add_argument(
+        "--output-metrics",
+        type=Path,
+        default=None,
+        help="Override path for output eval_metrics.json (default: data/eval/eval_metrics.json)",
+    )
     args = parser.parse_args()
 
     try:
@@ -502,7 +508,10 @@ def main():
     print(f"\nResults saved to: {output_path}")
     
     # Also save aggregate metrics as JSON
-    metrics_path = Path(__file__).parent.parent / "data" / "eval" / "eval_metrics.json"
+    _default_metrics = Path(__file__).parent.parent / "data" / "eval" / "eval_metrics.json"
+    metrics_path = args.output_metrics if getattr(args, "output_metrics", None) else _default_metrics
+    if not metrics_path.is_absolute():
+        metrics_path = Path(__file__).parent.parent / metrics_path
     metrics_data = {
         "aggregate_metrics": aggregate_metrics,
         "evaluation_time_seconds": elapsed_time,

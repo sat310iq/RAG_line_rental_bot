@@ -14,6 +14,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
 from src.config import Config
 from src.vector_store_manager import VectorStoreManager, filter_effective_documents
+from src.sidecar_graph import SidecarGraph
 from src.query_cache import QueryCache
 from src.tenant_auth import TenantAuth
 from src.responder import Responder
@@ -172,7 +173,18 @@ class RAGAnswerer:
         self.vector_store_manager = vector_store_manager
         self.query_cache = query_cache
         self.tenant_auth = tenant_auth
-        
+
+        # GRAPHRAG-POC-01: sidecar graph (lazy-loaded when graph_rag_enabled)
+        self._sidecar_graph: Optional[SidecarGraph] = None
+        if getattr(config, "graph_rag_enabled", False):
+            import os
+            yaml_path = getattr(config, "graph_rag_sidecar_path", "data/sidecar_graph.yaml")
+            if os.path.exists(yaml_path):
+                try:
+                    self._sidecar_graph = SidecarGraph.load(yaml_path, vector_store_manager)
+                except Exception:
+                    logger.exception("sidecar_graph load failed path=%s", yaml_path)
+
         # Initialize Responder (new schema-based response generator)
         self.responder = Responder(config)
         
@@ -1648,6 +1660,22 @@ class RAGAnswerer:
                     contract_source_retry_debug["retry_added"] = added_docs
                 contract_source_retry_debug["after_count"] = len(pdf_docs)
 
+        # GRAPHRAG-POC-01: 1-hop sidecar graph expand (GRAPH_RAG_ENABLED=1 のみ)
+        _graph_expand_count = 0
+        if getattr(self, "_sidecar_graph", None) is not None:
+            graph_extra = self._sidecar_graph.expand(pdf_docs)
+            if graph_extra:
+                seen_graph: Set[Any] = {
+                    (d.metadata or {}).get("stable_id") or hash(d.page_content)
+                    for d in pdf_docs
+                }
+                for gd in graph_extra:
+                    gkey = (gd.metadata or {}).get("stable_id") or hash(gd.page_content)
+                    if gkey not in seen_graph:
+                        seen_graph.add(gkey)
+                        pdf_docs.append(gd)
+                        _graph_expand_count += 1
+
         # Sprint 3 #2: for is_important_matters queries where retrieval returned nothing,
         # try deterministic inject (keyword→section→VSM fetch) before falling back.
         _im_pre_inject_reason: Optional[str] = None
@@ -1728,6 +1756,8 @@ class RAGAnswerer:
         }
         if _im_pre_inject_reason:
             search_debug_info["important_matters_pre_inject"] = _im_pre_inject_reason
+        if _graph_expand_count:
+            search_debug_info["graph_expand_added"] = _graph_expand_count
         
         # Filter tenant-specific information
         all_documents = self._filter_tenant_info(all_documents, tenant_contract_id)

@@ -718,6 +718,64 @@ items[0].text: "特約④については契約書内での記載が確認でき�
 
 ---
 
+## GRAPHRAG-POC-01 eval｜2026-05-24
+
+> Sprint 3 / issue: rental_rag_poc-uye  
+> eval CSV: `data/eval/graphrag_poc_questions.csv`（12問）  
+> 3回実施: Baseline × 2、GRAPH_RAG_ENABLED=1（6-edge）、GRAPH_RAG_ENABLED=1（34-edge）
+
+### 実装内容
+
+| ファイル | 変更 |
+|---|---|
+| `src/sidecar_graph.py` | 新規: YAML 定義エッジから 1-hop 展開するグラフ RAG サイドカー |
+| `src/rag_answerer.py` | graph expand ブロック追加（contract_source retry 後・inject 前） |
+| `src/config.py` | `graph_rag_enabled`、`graph_rag_sidecar_path` フィールド追加 |
+| `data/sidecar_graph.yaml` | 34 エッジ（契約書内 4 + 契約書↔重説 双方向 30）手動定義 |
+| `src/contract_query_router.py` | `_IM_KEYWORD_SECTION_MAP` 拡張（13→56 エントリ）、`_CONTRACT_KEYWORD_ARTICLE_MAP` 新規 |
+
+### eval 結果比較（12問 / GRAPH_RAG_ENABLED=1 / DISABLE_SEMANTIC_CACHE=1）
+
+| 指標 | Baseline | 34-edge graph | Δ |
+|---|---|---|---|
+| avg_relevance | **0.8750** | **0.8333** | −0.042 |
+| avg_completeness | 0.9583 | 0.9583 | 0 |
+| avg_evidence_binding | 0.9167 | 0.9167 | 0 |
+| avg_hallucination_unsourced | 0.0417 | **0.1250** | +0.083 ↑ |
+| avg_hallucination_overreach | 0.0417 | 0.0833 | +0.042 ↑ |
+| routing: contract_source_rag | 5/12 (41.7%) | 同 | — |
+| latency p50 | 3,381 ms | 2,949 ms | — |
+
+### 動作確認（直接テスト）
+
+`SidecarGraph.expand()` 単体では正常動作:
+- 第17条 article seed → 別表第1（×3）＋§20（×2）を追加（5 docs / 2 rels）
+- 34 エッジ全件ロード確認
+- `GRAPH_RAG_ENABLED=1` → `config.graph_rag_enabled=True` ✅
+
+### Q2 regression 原因
+
+「原状回復の別表（床）」質問で Relevance 1.00 → 0.50 に低下。
+
+連鎖: `別表第1` seed → `referenced_by_article_17`（第17条 fetch）→ 第17条 が `cross_doc_smoking_restoration` で§20（禁煙・クリーニング）を追加。床損耗の質問に喫煙関連コンテキストが混入し LLM が混乱。
+
+### 根本課題（未解決）
+
+| 課題 | 内容 |
+|---|---|
+| MH seed 不足 | MH型質問（「家具でフローリングがへこんだ」等）は `contract_source_q=False` → master retry 未発動 → `pdf_docs=[]` → graph に seed がなく展開不可 |
+| multi_hop_coverage 未実装 | PoC の受入基準（MH Tier-1 6問 coverage ≥0.8）を計測するメトリクスが eval スクリプトにない |
+| クロスドック noise | §20（特約・禁煙）が §17（原状回復）経由で広いクエリに混入 |
+
+### 結論
+
+- graph expand は実装・動作確認済み（GRAPHRAG-POC-01 POC 完了）
+- 現 eval セットでは僅かに品質低下（relevance −0.04）
+- MH クエリへの効果は別途 seed seeding 実装（キーワード→条文直接 fetch）が前提
+- `GRAPH_RAG_ENABLED=1` は本番に投入しない（次タスク: seed seeding or eval 拡充から判断）
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する
