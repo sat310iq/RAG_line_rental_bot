@@ -781,6 +781,8 @@ class RAGAnswerer:
             queries.append("使用目的")
         if m := re.search(r"特約\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫0-9０-９]+)", qn):
             queries.append(f"特約{m.group(1)}")
+        if any(x in qn for x in ("水道代", "水道料")) and any(x in qn for x in ("超え", "超過")):
+            queries.append("水道料を超過した場合の支払い")
         queries = queries[:3]
         trace["queries"] = list(queries)
 

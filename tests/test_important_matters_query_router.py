@@ -117,6 +117,22 @@ def test_is_contract_source_question_flooring_damage(question: str, expected: bo
     assert is_contract_source_question(question) is expected
 
 
+@pytest.mark.parametrize(
+    "question,expected",
+    [
+        # XD-01 系: 水道料超過 → 特約①（水道料の超過分）への seed routing
+        ("水道代が基準を超えたらどうなる？", True),
+        ("水道料が超過した場合の支払いは？", True),
+        # 否定例: 単純な金額確認は KB fast path
+        ("水道代はいくら？", False),
+        ("水道費用についての連絡先", False),
+    ],
+)
+def test_is_contract_source_question_water_overage(question: str, expected: bool) -> None:
+    """XD-01 系: 水道料超過パターンが contract_source_q=True を返すこと。"""
+    assert is_contract_source_question(question) is expected
+
+
 def test_prefers_contract_when_honbun_article_not_important_matters_only() -> None:
     assert prefers_contract_master_chunks("本文第11条の修繕は誰の負担ですか") is True
 

@@ -290,6 +290,10 @@ def is_contract_source_question(
     if _RE_FLOORING_DAMAGE.search(q):
         return True
 
+    # 水道料超過 → 特約①（水道料の超過分）への seed routing（XD-01 系）
+    if any(x in q for x in ("水道代", "水道料")) and any(x in q for x in ("超え", "超過")):
+        return True
+
     if extra_regex:
         for pat in extra_regex:
             if pat and re.search(pat, q):
