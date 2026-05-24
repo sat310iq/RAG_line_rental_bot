@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |------|------|
 | **対象読者** | 実装者（一次）、新規メンバー（オンボーディング）、意思決定者（§6・§7 のみで可） |
-| **ステータス** | **Reviewed** — 2026-05-16 所感反映・§8 アクション ID 付与 |
-| **バージョン** | **v0.7** |
+| **ステータス** | **Reviewed** — 2026-05-24 should_search_master() 導入・v0.8 更新 |
+| **バージョン** | **v0.8** |
 | **作成日** | 2026-05-16 |
-| **最終更新** | 2026-05-22 (v0.7) |
+| **最終更新** | 2026-05-24 (v0.8) |
 | **レビュー** | ドキュメント所感 OK（残ギャップは §8.2 のアクションで追跡） |
 | **コード正本** | `src/contract_query_router.py`, `src/rag_answerer.py`, `src/interfaces/line/handler.py`, `src/kb_fast_path.py` |
 | **関連 ADR** | `CONTEXT.md` §6 ADR-001（Master TXT 正、KB は要約＋ルーティング） |
@@ -39,22 +39,25 @@
 
 ---
 
-## 1. 回答経路の全体像（3 経路）
+## 1. 回答経路の全体像（3 段ゲート）
 
-| 経路 | 根拠 | 典型レイテンシ | ベクトル検索 | 権威（ADR-001） |
-|------|------|----------------|--------------|-----------------|
-| **A. KB fast path** | `faq_kb.csv` キーワードスコア | 低（LLM なし） | 使わない | KB は要約 |
-| **B. 契約ソース RAG** | Master TXT（契約書 + 重説） | 高 | 使う（`force_master`） | **Master が正** |
-| **C. 一般 RAG** | KB チャンク + Master の混在 | 高 | 使う | 混在時は FAQ 優先になりうる |
+| ゲート | 関数 | 経路 | 典型レイテンシ | ベクトル検索 | 権威（ADR-001） |
+|--------|------|------|----------------|--------------|-----------------|
+| **① KB fast path** | `try_kb_fast_path()` | FAQ 即答 | 低（LLM なし） | 使わない | KB は要約 |
+| **② Master RAG** | `should_search_master()=True` | B. 契約ソース RAG | 高 | 使う（`force_master`） | **Master が正** |
+| **③ それ以外** | 上記いずれも False | C. 一般 RAG / clarification | 高 | 使う | KB + Master 混在 |
+
+`should_search_master()` は `is_contract_source_question()` の上位関数（v0.8〜）。  
+4 レイヤ OR 構造: **A.** 既存 csq 判定 → **B.** topic keyword（XD-03/MH-05/MH-06 含む）→ **D.** explicit doc trigger / strong meta + domain。
 
 **LINE と `RAGAnswerer.answer()` の差分（必読）**
 
-| 段階 | KB fast path | `contract_source_q` の扱い |
-|------|--------------|---------------------------|
-| **LINE `handler.py`** | **`contract_source_q=False` のみ実行**（P0 対応済み）| `True` なら `KBFastPathResult(kind="miss")` で即 bypass → `RAGAnswerer.answer()` へ |
-| **`answer()` 内** | miss 後のみ | **True なら hit を採用しない** |
+| 段階 | KB fast path | `should_search_master` の扱い |
+|------|--------------|-------------------------------|
+| **LINE `handler.py`** | **`should_search_master=False` のみ実行**（v0.8〜）| `True` なら `KBFastPathResult(kind="miss")` で即 bypass → `RAGAnswerer.answer()` へ |
+| **`answer()` 内** | miss 後のみ | **`contract_source_q=True`（= `is_contract_source_question`）なら KB hit 不採用** |
 
-> **P0 変更点（2026-05-18 `rental_rag_poc-7xd`）**: 旧来は LINE handler で全クエリが `try_kb_fast_path` を通過し、重説質問でも KB hit で終了しうる不具合があった。P0 で `handler.py` L272–287 に `is_contract_source_question()=True` → `KBFastPathResult(kind="miss")` bypass を追加し、契約ソース問は RAG へ直行するよう修正。
+> **P0 変更点（2026-05-18 `rental_rag_poc-7xd`）**: 旧来は LINE handler で全クエリが `try_kb_fast_path` を通過し、重説質問でも KB hit で終了しうる不具合があった。P0 で `handler.py` に `is_contract_source_question()=True` → bypass を追加（v0.8 で `should_search_master()` に昇格）。
 
 ---
 
@@ -94,21 +97,20 @@ flowchart TB
 
 ## 3. 判定早見表（一か所に集約）
 
-### 3.1 `contract_source_q`（`is_contract_source_question`）
+### 3.1 `should_search_master()`（`is_contract_source_question` はラッパー）
 
-| 条件 | True の例 | False の例 |
-|------|-----------|------------|
-| 「重要事項説明書」 | 重要事項説明書の3番では家賃は… | — |
-| 「重説」 | 重説の16番の利用制限は… | — |
-| 「重要事項」+「説明書」 | — | 契約更新したい |
-| 「重要事項」+ メタ語※ | 宅建の重要事項で更新料は… | 月々の支払いは合計いくら？ |
-| 節番号（重要事項の◯ / ◯番） | 重要事項の12では洪水は | — |
-| 第◯条・特約・頭書・別表・本文 | 本文第4条の賃料は… | — |
-| 「契約書」+ 記載系 | 契約書にどう書いてあるか | 契約書を送って |
-| 「契約条項」+ 内容/関係/について | 原状回復と契約条項の関係は？ | 契約条項（単独） |
-| 短期解約違約金 / 違約金+金額 | 6ヶ月以内の違約金は… | 違約金について教えて |
+**4 レイヤ OR 構造（いずれかで True）:**
 
-※ メタ語: `記載` / `書いて` / `書かれ` / `定め` / `規定` / `どのように` / `どう書` / `何が` / `いくら` / `教えて`
+| レイヤ | 条件 | True 例 | False 例 |
+|--------|------|---------|---------|
+| **A. 既存 csq 判定** | 第◯条・特約・頭書・別表・本文・重説明示・違約金額 等 | 本文第4条の賃料は… / 重説の3番では… | 契約更新したい |
+| **B. topic keyword** | 解約+通知 / 解約予告 → 第14条 | 解約の通知は何日前？ | 解約したいです |
+| ↑ B 続き | クロス+費用/負担 → 別表（MH-05） | クロスの費用負担はどう決まる？ | 水漏れしています |
+| ↑ B 続き | 清掃費 / 清掃+退去 → 特約⑥（MH-06） | 退去時の清掃費はいくら？ | 修繕をお願いしたい |
+| **D. doc trigger / meta** | 重要事項説明書・重説（単独 OK）/ 強 meta※ + 賃貸 domain | 原状回復はどう規定されてますか | コンビニを調べて |
+
+※ 強 meta（_STRONG_DOC_META）: `記載` / `書いて` / `書かれ` / `どう書` / `定め` / `規定`  
+弱 meta（`教えて` 等）単体では Layer D は発火しない（ノイズ防止）。
 
 ### 3.2 `is_important_matters_question`（検索後 boost のみ）
 
@@ -120,10 +122,13 @@ flowchart TB
 
 ### 3.3 フラグ組み合わせ → 経路
 
-| contract_source_q | is_important_matters | 経路 | プロンプト（Master あり時） |
-|-------------------|----------------------|------|------------------------------|
+`should_search_master` は `is_contract_source_question` のスーパーセット（v0.8〜）。  
+KB bypass と `answer()` 内は `should_search_master` / `contract_source_q` を共有する。
+
+| should_search_master (= contract_source_q) | is_important_matters | 経路 | プロンプト（Master あり時） |
+|--------------------------------------------|----------------------|------|------------------------------|
 | False | False | **C. 一般 RAG** | `answer_prompt` |
-| False | True | **C. 一般 RAG**（**boost 発火**：section_id/rest-sort のみ。article/特約④ boost は contract_source 限定） | 同上 |
+| False | True | **C. 一般 RAG**（**boost 発火**：section_id/rest-sort のみ） | 同上 |
 | True | False | **B. 契約ソース RAG** | `contract_source_qa_prompt` |
 | True | True | **B + 重説 boost** | `contract_source_qa_prompt` |
 
@@ -288,14 +293,17 @@ flowchart TB
 | `docs/eval_log.md` | 定量（KB 62 件、Metrics v2 17 問） |
 | `CONTEXT.md` | ADR-001、用語定義 |
 | `docs/testing/CLAUDE_CODE_JUYO_RAG_IMPLEMENTATION_PROMPT.md` | 重説不具合の調査プロンプト |
+| `docs/testing/CLAUDE_CODE_MASTER_ROUTING_IMPLEMENTATION_PROMPT.md` | `should_search_master()` 導入・段階的移行（Claude Code 向け） |
+| `docs/testing/CLAUDE_CODE_GRAPHRAG_PHASE02_CLOSEOUT_PROMPT.md` | Phase 0–2 確定（23問 eval → 2コミット → uye.1 クローズ） |
 
 ---
 
 *変更履歴:*
 - *v0.1 (2026-05-16): 初版・レビュー指摘一括反映*
-- *v0.2 (2026-05-16): Reviewed 昇格・§8.2 アクション ID（AIT-*）・§7.2 を追跡アイテムに紐づけ*
+- *v0.2 (2026-05-16): Reviewed 昇格・§8.2 アクショ�� ID（AIT-*）・§7.2 を追跡アイテムに紐づけ*
 - *v0.3 (2026-05-16): §8.2 に Beads チケット ID（BD 列）を追加*
 - *v0.4 (2026-05-17): AIT-RTE-01 決定記録追加（§7.2）— `_route_query` 削除・AIT-RTE-02/03 N/A クローズ*
-- *v0.5 (2026-05-19): §8.1 施策一覧を完了状態に更新（P0/P1/P2/P3 完了分を ✅ に）— rev `line-webhook-20260518-2151` 本番反映済み*
+- *v0.5 (2026-05-19): §8.1 施策一覧を完了状態��更新（P0/P1/P2/P3 完了分を ✅ に���— rev `line-webhook-20260518-2151` 本番反映済み*
 - *v0.6 (2026-05-22): §3.3 テーブル更新（1-D: `is_important_matters=True` でも boost 発火）・§8.1 P2 完了マーク*
 - *v0.7 (2026-05-22): §1 LINE 表・§2 Mermaid を P0 bypass（`contract_source_q=True` → KB fast path skip）に更新（1-F 残り）*
+- *v0.8 (2026-05-24): §1 3 段ゲート表・§3.1 4 レイヤ早見表・§3.3 フラグ表 を `should_search_master()` 基準に刷新。XD-03（解約通知）・MH-05（クロス費用）・MH-06（清掃費）routing 追加。`handler.py` Phase 1 反映。`tests/test_master_routing.py` 追加（36 ケース）。*
