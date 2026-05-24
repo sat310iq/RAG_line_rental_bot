@@ -1105,6 +1105,46 @@ MH-06 inject reason: `tokuyaku_cleaning_fetch:special_terms`（fetch して先�
 
 **rental_rag_poc-bcu クローズ: XD-01/MH-06 とも Cloud Run で rel=1.0、KB 回帰なし。**
 
+### LINE webhook スモーク（署名付き）｜2026-05-24
+
+`X-Line-Signature` を正しく計算して Cloud Run `/webhook` に直送（replyToken=smoke、返信 400 は想定内）。
+
+| # | クエリ | HTTP | routing_decision | 回答（ログより） |
+|---|--------|------|-----------------|----------------|
+| XD-01 | 水道代が基準を超えたらどうなる？ | 200 | contract_rag | 「水道代が3,300円を超えた場合、超過分は賃借人が賃貸人に支払う必要があります。」 ✅ |
+| MH-06 | 退去時の清掃費はいくら？ | 200 | contract_rag | 「退去時の清掃費は、入居者の負担となり、特約に明記されています。」 ✅ |
+
+---
+
+## GRAPH_RAG=1 Cloud Run staging eval｜2026-05-24（revision line-webhook-20260524-0723）
+
+Cloud Run 本番設定（`GRAPH_RAG_ENABLED=1`、`PDF_SCORE_THRESHOLD=0.40`）でのレイテンシと MH 系追加効果計測。
+
+### レイテンシ計測（/debug/rag エンドポイント）
+
+| クエリ | ms | inject | pre_rerank nodes | 回答 |
+|--------|----|--------|-----------------|------|
+| XD-01 水道代が基準を超えたらどうなる？ | 74ms | `tokuyaku_water_fetch:special_terms:promote` | 15 | 正答（キャッシュ） |
+| MH-06 退去時の清掃費はいくら？ | 65ms | `tokuyaku_cleaning_fetch:special_terms:promote` | 15 | 正答（キャッシュ） |
+| MH-05 クロスの費用負担 | 18,615ms | — | 16 | 正答 |
+| B-08 違約金はいくら？ | 23,999ms | — | 18 | 正答 |
+| B-notice 解約の通知は何日前？ | 4,805ms | — | 20 | 正答 |
+
+### 評価（23問）
+
+| 指標 | 値 |
+|------|----|
+| RAG 実行クエリ数 | 7/23（残 16 はキャッシュ） |
+| p50 | 1.6ms（キャッシュ） |
+| p95 | 10,046ms |
+| mean（全体） | 2,294ms |
+
+### 所見
+
+- **inject は GRAPH_RAG 状態に依存しない**: XD-01/MH-06 は graph OFF/ON どちらでも `_promote_or_inject` で先頭確定。
+- **GRAPH_RAG=1 の追加効果**: MH-05/B-08 などでは graph expand が 15-20 nodes を供給するが、inject がない場合の p95 は 10-24s に達する。XD-01/MH-06 の回答品質向上に直接寄与はしていない（inject が先に確定するため）。
+- **レイテンシリスク**: GRAPH_RAG=1 + 複合クエリで 20-24s の outlier が確認。本番は 1 min timeout 内だが UX 上の懸念あり。Phase 3 でレイテンシ最適化を検討。
+
 ---
 
 ## 改善サイクルテンプレート
