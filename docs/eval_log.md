@@ -1095,6 +1095,16 @@ MH-06 inject reason: `tokuyaku_cleaning_fetch:special_terms`（fetch して先�
 | eval_questions.csv | §3 依存質問 2 件の期待値を「確認できません」に更新 |
 | fixture yaml | `tosho_3_chinryo_hiyo` 削除（頭書(3) 削除）、`juyo_rent` を 特約① 水道料 3,300 円テストに更新 |
 
+### Cloud Run スモーク（rental_rag_poc-bcu クローズ確認）｜2026-05-24（revision line-webhook-20260524-0723）
+
+| # | クエリ | inject_reason | 判定 | 回答抜粋 |
+|---|--------|---------------|------|---------|
+| XD-01 | 水道代が基準を超えたらどうなる？ | `tokuyaku_water_fetch:special_terms:promote` | ✅ | 「超過分の水道料を賃借人が賃貸人へ支払う」 |
+| MH-06 | 退去時の清掃費はいくら？ | `tokuyaku_cleaning_fetch:special_terms:promote` | ✅ | 「入居期間の長短・退去理由に関わらず賃借人負担」 |
+| A（回帰） | 水道代はいくら？ | — (inject 非発火) | ✅ | KB FAQ（管理会社 To You へ連絡）正常 |
+
+**rental_rag_poc-bcu クローズ: XD-01/MH-06 とも Cloud Run で rel=1.0、KB 回帰なし。**
+
 ---
 
 ## 改善サイクルテンプレート
