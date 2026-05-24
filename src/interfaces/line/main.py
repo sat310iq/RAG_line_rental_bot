@@ -145,10 +145,12 @@ async def debug_rag(body: RAGDebugBody):
         rag = RAGAnswerer(config, vector_store_manager, query_cache, tenant_auth)
         answer = rag.answer(body.question, None)
     return {
+        "items": [{"text": i.text, "citation": i.citation} for i in (answer.items or [])],
         "summary": answer.summary,
         "evidence": answer.evidence,
         "next_action": answer.next_action,
         "caveats": answer.caveats,
+        "search_debug_info": getattr(answer, "search_debug_info", None),
     }
 
 

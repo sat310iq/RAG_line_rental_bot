@@ -129,6 +129,90 @@ def _inject_tokuyaku_penalty_if_needed(
     return penalty_chunks[:1] + other_docs, "tokuyaku_penalty_fetch:special_terms"  # P5
 
 
+def _promote_or_inject(
+    other_docs: List[Document],
+    chunk_pred,
+    fetch_fn,
+    *,
+    inject_reason: str,
+    empty_reason: str,
+) -> Tuple[List[Document], Optional[str]]:
+    """Promote matching chunk to position 0, or fetch+inject if not in pool."""
+    existing_idx = next((i for i, d in enumerate(other_docs) if chunk_pred(d)), None)
+    if existing_idx is not None:
+        if existing_idx == 0:
+            return other_docs, None  # already at front, nothing to do
+        chunk = other_docs[existing_idx]
+        rest = other_docs[:existing_idx] + other_docs[existing_idx + 1:]
+        return [chunk] + rest, f"{inject_reason}:promote"
+    fetched = [c for c in fetch_fn() if chunk_pred(c)]
+    if not fetched:
+        return other_docs, empty_reason
+    return fetched[:1] + other_docs, inject_reason
+
+
+def _inject_tokuyaku_water_if_needed(
+    question: str,
+    other_docs: List[Document],
+    vsm: "VectorStoreManager",
+    *,
+    contract_source_q: bool,
+    enabled: bool,
+) -> Tuple[List[Document], Optional[str]]:
+    """Promote or inject 特約①（水道料超過）chunk to position 0.
+
+    P1: contract_source_q path only
+    P2: _is_water_fee_overage_question — 水道 + 超過/基準/どうなる
+    P3: promote if already in pool at wrong position; inject if absent
+    P4: enabled flag
+    """
+    from src.retrieval_metadata_boost import _is_water_fee_overage_question, _is_tokuyaku1_chunk
+    if not contract_source_q:
+        return other_docs, None
+    if not enabled:
+        return other_docs, None
+    if not _is_water_fee_overage_question(question):
+        return other_docs, None
+    return _promote_or_inject(
+        other_docs,
+        _is_tokuyaku1_chunk,
+        lambda: vsm.fetch_master_by_cite_kind(doc_kind="contract", cite_kind="special_terms"),
+        inject_reason="tokuyaku_water_fetch:special_terms",
+        empty_reason="tokuyaku_water_fetch_empty",
+    )
+
+
+def _inject_tokuyaku_cleaning_if_needed(
+    question: str,
+    other_docs: List[Document],
+    vsm: "VectorStoreManager",
+    *,
+    contract_source_q: bool,
+    enabled: bool,
+) -> Tuple[List[Document], Optional[str]]:
+    """Promote or inject 特約⑥（退去時清掃・エアコン清掃）chunk to position 0.
+
+    P1: contract_source_q path only
+    P2: _is_cleaning_fee_question — 清掃費 or クリーニング費
+    P3: promote if already in pool at wrong position; inject if absent
+    P4: enabled flag
+    """
+    from src.retrieval_metadata_boost import _is_cleaning_fee_question, _is_tokuyaku6_chunk
+    if not contract_source_q:
+        return other_docs, None
+    if not enabled:
+        return other_docs, None
+    if not _is_cleaning_fee_question(question):
+        return other_docs, None
+    return _promote_or_inject(
+        other_docs,
+        _is_tokuyaku6_chunk,
+        lambda: vsm.fetch_master_by_cite_kind(doc_kind="contract", cite_kind="special_terms"),
+        inject_reason="tokuyaku_cleaning_fetch:special_terms",
+        empty_reason="tokuyaku_cleaning_fetch_empty",
+    )
+
+
 class AnswerItem(BaseModel):
     """Individual answer item with citation."""
     text: str = Field(description="項目のテキスト（禁止事項、手順ステップ、事実など）")
@@ -340,7 +424,7 @@ class RAGAnswerer:
    **重要**: 根拠情報に「無」「なし」「（記載なし）」「非該当」等の表記があっても、それは「その項目が文書に記載されている（結果が無・未実施等）」ことを意味する。「確認できません」とは言わず、「§XX に記載があり、〇〇は「無」とのことです」のように根拠の内容を正確に伝えること。
 4. **断定の抑制**: 「必ず」「絶対に」「違法です」等の断定は避ける。
 5. **原状回復・修繕費用・責任**: 原状回復・修繕に関する費用については、条文・別表に書かれた一般的な趣旨・参照先のみ説明する。
-   個別の負担額・請求可否・過失の有無は断定しない。重要事項説明書の月額費用表（家賃・共益費・水道料等）は根拠に記載のとおり正確に述べること。
+   個別の負担額・請求可否・過失の有無は断定しない。重要事項説明書の月額費用表（家賃・共益費・水道料等）は根拠に記載のとおり正確に述べること。根拠情報に月額費用の記載がない場合は「根拠情報内に月額費用の記載は確認できません」と伝え、具体的な金額を推測・補完しないこと。
 6. **ハザード・浸水**: 重要事項の記載の要約に留める。個別物件のリスクや浸水深の確定はしない。
 7. **目的物・特約事項**: 賃貸借の目的物（所在・建物・専有部分の範囲等）や特約事項については、根拠情報に現れる**該当箇所を見つけた範囲で網羅的に**示す。複数の特約・別表・頭書がある場合は漏れなく列挙し、条文・別表の文言を必要な範囲で簡潔に転記してよい（根拠にない確定はしない）。
 8. **別表・負担区分**（質問が別表・表・負担区分に関するとき、次の【出力形式】と【根拠制約】を併せて適用する）:
@@ -1827,6 +1911,24 @@ class RAGAnswerer:
         )
         if tokuyaku_inject_reason:
             search_debug_info["tokuyaku_penalty_inject"] = tokuyaku_inject_reason
+        other_docs, tokuyaku_water_reason = _inject_tokuyaku_water_if_needed(
+            question,
+            other_docs,
+            self.vector_store_manager,
+            contract_source_q=contract_source_q,
+            enabled=self.config.master_section_inject_enabled,
+        )
+        if tokuyaku_water_reason:
+            search_debug_info["tokuyaku_water_inject"] = tokuyaku_water_reason
+        other_docs, tokuyaku_cleaning_reason = _inject_tokuyaku_cleaning_if_needed(
+            question,
+            other_docs,
+            self.vector_store_manager,
+            contract_source_q=contract_source_q,
+            enabled=self.config.master_section_inject_enabled,
+        )
+        if tokuyaku_cleaning_reason:
+            search_debug_info["tokuyaku_cleaning_inject"] = tokuyaku_cleaning_reason
         master_boost_trace: List[Dict[str, Any]] = []
         if contract_source_q or is_important_matters_question(question):
             other_docs, master_boost_trace = apply_master_document_boost(

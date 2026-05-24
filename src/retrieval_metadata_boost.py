@@ -49,6 +49,8 @@ def _meta_signature(d: Document) -> Tuple[Any, ...]:
 
 # T3b: 特約④（NFKC 後は 特約4）+ penalty topic
 _RE_TOKUYAKU04 = re.compile(r"特約\s*[④4]")
+_RE_TOKUYAKU01 = re.compile(r"特約\s*[①1]")
+_RE_TOKUYAKU06 = re.compile(r"特約\s*[⑥6]")
 
 
 def _is_tokuyaku_penalty_question(question: str) -> bool:
@@ -75,6 +77,36 @@ def _is_tokuyaku_penalty_chunk(doc: Document) -> bool:
         str(m.get("cite_label") or ""),
     ])
     return "短期解約違約金" in haystack or "特約④" in haystack
+
+
+def _is_water_fee_overage_question(question: str) -> bool:
+    """XD-01: 水道代/水道料 + 超過/超えた/基準 queries → 特約① inject."""
+    q = unicodedata.normalize("NFKC", question or "")
+    if _RE_TOKUYAKU_NUMBERED.search(q) and not _RE_TOKUYAKU01.search(q):
+        return False
+    if "水道" not in q:
+        return False
+    return any(kw in q for kw in ("超過", "超え", "基準", "いくら", "金額", "どうなる"))
+
+
+def _is_cleaning_fee_question(question: str) -> bool:
+    """MH-06: 退去時清掃費/クリーニング費 queries → 特約⑥ inject."""
+    q = unicodedata.normalize("NFKC", question or "")
+    if _RE_TOKUYAKU_NUMBERED.search(q) and not _RE_TOKUYAKU06.search(q):
+        return False
+    return "清掃費" in q or ("クリーニング" in q and any(kw in q for kw in ("費", "料", "費用")))
+
+
+def _is_tokuyaku1_chunk(doc: Document) -> bool:
+    """特約①（水道料超過）を含む chunk かを判定。"""
+    haystack = doc.page_content or ""
+    return "特約①" in haystack or ("水道料" in haystack and "超過" in haystack)
+
+
+def _is_tokuyaku6_chunk(doc: Document) -> bool:
+    """特約⑥（退去時清掃・エアコン清掃）を含む chunk かを判定。"""
+    haystack = doc.page_content or ""
+    return "特約⑥" in haystack or ("退去時" in haystack and "清掃" in haystack and "エアコン" in haystack)
 
 
 def _is_usage_purpose_article3_candidate(doc: Document) -> bool:

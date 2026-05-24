@@ -1,9 +1,14 @@
+import pytest
 from langchain_core.documents import Document
 
 from src.retrieval_metadata_boost import (
     apply_master_document_boost,
     _is_tokuyaku_penalty_question,
     _is_tokuyaku_penalty_chunk,
+    _is_water_fee_overage_question,
+    _is_cleaning_fee_question,
+    _is_tokuyaku1_chunk,
+    _is_tokuyaku6_chunk,
 )
 
 
@@ -285,3 +290,64 @@ def test_no_boost_when_neither_contract_source_nor_imp_matters() -> None:
     )
     assert boosted == docs
     assert trace == []
+
+
+# --- 特約① water fee overage detection ---
+
+@pytest.mark.parametrize("q,expected", [
+    ("水道代が基準を超えたらどうなる？", True),     # XD-01
+    ("水道料の超過分はどうなりますか", True),
+    ("水道代がいくら超えたら請求される？", True),
+    ("水道代の金額を教えてください", True),
+    ("水道特約①はどうなる？", True),              # 特約① explicit
+    ("特約②について教えて", False),               # other numbered 特約
+    ("水漏れの対応は？", False),                  # 水道 but no overage keyword
+    ("家賃について教えて", False),
+])
+def test_is_water_fee_overage_question(q: str, expected: bool) -> None:
+    assert _is_water_fee_overage_question(q) is expected
+
+
+# --- 特約⑥ cleaning fee detection ---
+
+@pytest.mark.parametrize("q,expected", [
+    ("退去時の清掃費はいくら？", True),            # MH-06
+    ("クリーニング費用はどのくらいかかる？", True),
+    ("クリーニング料はいくらですか", True),
+    ("退去時のクリーニング費を教えて", True),
+    ("特約⑥の清掃費について", True),              # 特約⑥ explicit
+    ("特約③の鍵交換費用", False),                 # other numbered 特約
+    ("退去時の手続きを教えて", False),             # 退去 but no cleaning
+    ("敷金について教えて", False),
+])
+def test_is_cleaning_fee_question(q: str, expected: bool) -> None:
+    assert _is_cleaning_fee_question(q) is expected
+
+
+# --- chunk detectors ---
+
+def _special_terms_chunk(content: str) -> Document:
+    return Document(
+        page_content=content,
+        metadata={"doc_kind": "contract", "cite_kind": "special_terms", "cite_label": "特約"},
+    )
+
+
+def test_is_tokuyaku1_chunk_positive() -> None:
+    doc = _special_terms_chunk("## 特約①（水道料の超過分）\n①水道料3,300円を超過した場合、賃借人は超過分を支払う。")
+    assert _is_tokuyaku1_chunk(doc) is True
+
+
+def test_is_tokuyaku1_chunk_negative() -> None:
+    doc = _special_terms_chunk("## 特約⑩（インターネット・サービス停止）\n⑩インターネットの利用については無料。")
+    assert _is_tokuyaku1_chunk(doc) is False
+
+
+def test_is_tokuyaku6_chunk_positive() -> None:
+    doc = _special_terms_chunk("## 特約⑥（退去時清掃・エアコン清掃）\n⑥退去時の室内清掃、エアコン清掃料は賃借人負担。")
+    assert _is_tokuyaku6_chunk(doc) is True
+
+
+def test_is_tokuyaku6_chunk_negative() -> None:
+    doc = _special_terms_chunk("## 特約⑩（インターネット・サービス停止）\n⑩インターネットの利用については無料。")
+    assert _is_tokuyaku6_chunk(doc) is False
