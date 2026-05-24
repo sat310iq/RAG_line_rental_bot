@@ -1055,6 +1055,48 @@ graph expand が 特約①→§3 エッジを経由し §3 も取得。全12問�
 
 ---
 
+## bcu 特約①⑥ deterministic inject 実装｜2026-05-24（rental_rag_poc-bcu 方針 A）
+
+### 背景・動機
+
+方針 B（GRAPH_RAG Cloud Run staging）を試みたが、Cloud Run の `PDF_SCORE_THRESHOLD=0.40` により p1 チャンクが top-k を占有し特約①⑥ が graph expand seed に入らないことが判明。方針 A（deterministic inject）に切替。
+
+### 実装内容
+
+| 変更 | 内容 |
+|------|------|
+| `src/retrieval_metadata_boost.py` | `_is_water_fee_overage_question()` / `_is_cleaning_fee_question()` / `_is_tokuyaku1_chunk()` / `_is_tokuyaku6_chunk()` 追加 |
+| `src/rag_answerer.py` | `_promote_or_inject()` / `_inject_tokuyaku_water_if_needed()` / `_inject_tokuyaku_cleaning_if_needed()` 追加 |
+| `src/interfaces/line/formatter.py` | `_MGMT_FOOTER` — 全 RAG 回答末尾に「管理会社にお問い合わせください」付与 |
+| `tests/test_retrieval_metadata_boost.py` | 新規検出関数テスト 20 件追加 |
+
+### ローカル eval（方針 A 適用後）
+
+| 指標 | 値 |
+|------|----|
+| avg_recall_at_5 | **1.0000** ✅ |
+| avg_hallucination_fact_error | **0.0000** ✅ |
+| avg_answer_completeness | 0.8043 |
+| avg_relevance | 0.9565 |
+| pytest | **479 passed** ✅ |
+
+XD-01 inject reason: `tokuyaku_water_fetch:special_terms:promote`（pool に存在するが低順位 → 先頭昇格）  
+MH-06 inject reason: `tokuyaku_cleaning_fetch:special_terms`（fetch して先頭挿入）
+
+### ドキュメント更新（契約書・重説の家賃・日付削除）
+
+ユーザーが `グランマーレ大分空港契約書.txt` / `重要事項説明書.txt` から家賃金額・契約開始終了日を削除。
+
+| 対応 | 内容 |
+|------|------|
+| ベクターDB 再インデックス | master_txt 60 → 59 チャンク |
+| semantic cache クリア | 旧金額キャッシュ除去 |
+| `contract_source_qa_prompt` | 月額費用未記載時に金額を推測・補完しないルール追加 |
+| eval_questions.csv | §3 依存質問 2 件の期待値を「確認できません」に更新 |
+| fixture yaml | `tosho_3_chinryo_hiyo` 削除（頭書(3) 削除）、`juyo_rent` を 特約① 水道料 3,300 円テストに更新 |
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する

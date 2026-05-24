@@ -11,17 +11,12 @@ eval_defaults:
 cases:
   - id: juyo_rent
     group: 重要事項説明書
-    label: "3. 賃料及び賃料以外に授受される金額"
+    label: "特約①（水道料超過分）"
     question: >-
-      重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。
-    required_keywords:
-      any_of:
-        - ["31,700円", "2,500円", "3,300円"]
+      重要事項説明書では、水道料に関して何と記載されていますか。
     expected_snippets:
-      - "家賃"
-      - "31,700円"
-      - "2,500円"
-      - "3,300円"
+      - "水道料3,300円"
+      - "超過"
 
   - id: juyo_contract_term
     group: 重要事項説明書
