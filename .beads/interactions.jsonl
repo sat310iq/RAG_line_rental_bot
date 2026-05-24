@@ -20,3 +20,4 @@
 {"id":"int-dc619850","kind":"field_change","created_at":"2026-05-23T22:44:24.959565Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-oj4","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-79e377d9","kind":"field_change","created_at":"2026-05-24T00:04:40.529801Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-uye.1","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
 {"id":"int-c3d7148a","kind":"field_change","created_at":"2026-05-24T00:04:41.246669Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-uye","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-dac2e9ac","kind":"field_change","created_at":"2026-05-24T02:38:00.476189Z","actor":"Satoshi Koyama","issue_id":"rental_rag_poc-uye.1","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
