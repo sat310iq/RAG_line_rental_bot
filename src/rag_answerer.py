@@ -783,7 +783,16 @@ class RAGAnswerer:
             queries.append(f"特約{m.group(1)}")
         if any(x in qn for x in ("水道代", "水道料")) and any(x in qn for x in ("超え", "超過")):
             queries.append("水道料を超過した場合の支払い")
-        queries = queries[:3]
+        # XD-03: 解約通知 → 第14条（解約の申し入れ）
+        if ("解約" in qn and "通知" in qn) or "解約予告" in qn:
+            queries.append("解約の申し入れ")
+        # MH-05: クロス費用/負担 → 別表第II（原状回復）
+        if "クロス" in qn and any(x in qn for x in ("費用", "負担")):
+            queries.append("クロス 原状回復 別表")
+        # MH-06: 清掃費 / 退去時清掃 → 特約⑥（クリーニング費用表）
+        if "清掃費" in qn or ("清掃" in qn and any(x in qn for x in ("退去", "費用"))):
+            queries.append("クリーニング費用 特約")
+        queries = queries[:4]
         trace["queries"] = list(queries)
 
         def _is_article3_doc(doc: Document) -> bool:
@@ -1733,8 +1742,16 @@ class RAGAnswerer:
             effective_decision_path = "rag"
             effective_retrieval_used = True
 
-        resolved_docs = self._resolve_documents(csv_docs, pdf_docs)
-        all_documents = resolved_docs
+        # contract_source_q=True は Master TXT が権威（ADR-001）。
+        # _resolve_documents の FAQ-first topic フィルターを適用すると
+        # csq=True で到達したい Master チャンクが FAQ と同トピックのときに
+        # 落とされる（XD-03/MH-05/MH-06 等）。csq=True は後段の
+        # _select_docs_for_contract_source が kb_faq を除外するので
+        # ここでのトピック競合解消は不要。
+        if contract_source_q:
+            all_documents = csv_docs + pdf_docs
+        else:
+            all_documents = self._resolve_documents(csv_docs, pdf_docs)
         
         if csv_docs and pdf_docs:
             source_type = "multi"
@@ -1749,7 +1766,7 @@ class RAGAnswerer:
             "sources": ["deal", "master"],
             "deal_count": len(csv_docs),
             "master_count": len(pdf_docs),
-            "resolved_count": len(resolved_docs),
+            "resolved_count": len(all_documents),
             "total_documents": len(all_documents),
             "contract_source_q": contract_source_q,
             "contract_article_index": article_idx,

@@ -177,21 +177,90 @@ _CONTRACT_KEYWORD_ARTICLE_MAP: tuple[tuple[str, int], ...] = (
 )
 
 
+_META_LOOKUP: tuple[str, ...] = (
+    "調べて",
+    "確認して",
+    "記載",
+    "書いて",
+    "書かれ",
+    "どう書",
+    "教えて",
+)
+
+# Subset that unambiguously means "what does the document say" (used for Layer D)
+_STRONG_DOC_META: tuple[str, ...] = (
+    "記載",
+    "書いて",
+    "書かれ",
+    "どう書",
+    "定め",
+    "規定",
+)
+
+_RENTAL_DOMAIN_WORDS: tuple[str, ...] = (
+    "賃料",
+    "家賃",
+    "共益費",
+    "水道",
+    "敷金",
+    "更新",
+    "解約",
+    "退去",
+    "原状回復",
+    "特約",
+    "フローリング",
+    "クロス",
+    "費用",
+    "負担",
+    "契約",
+    "重説",
+    "重要事項",
+    "ハザード",
+    "洪水",
+    "ペット",
+    "禁止",
+)
+
+
 def _normalize_question(question: str) -> str:
     return unicodedata.normalize("NFKC", question or "")
 
 
-def is_contract_source_question(
+def _has_explicit_doc_trigger(q: str) -> bool:
+    """True when query references an explicit rental-doc name, or combines
+    strong doc-reference meta with a rental domain word (Layer D guard).
+
+    「コンビニを調べて」等の非賃貸語 AND でノイズを防ぐ。
+    """
+    # Pattern 1: explicit IM doc name (単独でOK — already guarded in Layer A,
+    # but kept here for self-containedness of this helper)
+    if _RE_IMPORTANT_MATTERS_DOC.search(q) or _RE_JUSETSU.search(q):
+        return True
+    # Pattern 2: 「契約書」 + strong doc-ref meta（「契約書を送って」は弾く）
+    if "契約書" in q and any(m in q for m in _STRONG_DOC_META):
+        return True
+    # Pattern 3: strong doc-ref meta AND rental domain word
+    has_doc_meta = any(m in q for m in _STRONG_DOC_META)
+    has_domain = any(d in q for d in _RENTAL_DOMAIN_WORDS)
+    return has_doc_meta and has_domain
+
+
+def should_search_master(
     question: str,
     extra_regex: Optional[Sequence[str]] = None,
 ) -> bool:
-    """True if the user is asking what the contract document says (article, 特約, 別表, etc.).
+    """True = 経路 B (Master TXT 検索) 対象。
 
-    「契約書」単独や「契約更新」等の一般相談では True にしない。
+    3 レイヤ OR 構造:
+      A. 既存 contract-source 判定（条番号・特約・重説明示 等）
+      B. topic keyword routing（XD-03 解約通知, MH-05 クロス費用, MH-06 清掃費 等）
+      D. explicit doc trigger または strong doc-ref meta + 賃貸ドメイン語
     """
     q = _normalize_question(question)
     if not q.strip():
         return False
+
+    # ── Layer A: 既存 contract-source 判定 ──────────────────────────────────
 
     if _RE_ARTICLE.search(q):
         return True
@@ -216,7 +285,7 @@ def is_contract_source_question(
     ):
         return True
 
-    # 契約条項 + 内容・関係を問う（契約書本文の条項そのものを尋ねる）
+    # 契約条項 + 内容・関係を問う
     if _RE_KEIYAKU_JOKO.search(q) and any(
         x in q for x in ("記載", "書いて", "書かれ", "定め", "規定", "内容", "関係", "について")
     ):
@@ -236,7 +305,6 @@ def is_contract_source_question(
         return True
     if "重要事項" in q and "説明書" in q:
         return True
-    # 「重」抜けタイポ（要事項説明書）でもマスター参照として扱う
     if _RE_JUYO_SETSUMEISHO_TYPO.search(q):
         return True
     if "重要事項" in q and any(
@@ -258,7 +326,7 @@ def is_contract_source_question(
     if _RE_JUYO_SECTION.search(q):
         return True
 
-    # 賃貸借の目的物・建物表示（マスター契約の定型記載を問うもの）
+    # 賃貸借の目的物・建物表示
     if "目的物" in q and any(
         m in q
         for m in (
@@ -277,7 +345,6 @@ def is_contract_source_question(
     ):
         return True
 
-    # 条番号なしでも「契約の使用目的/用途」を聞く質問は契約本文参照として扱う
     if _RE_USAGE_PURPOSE.search(q) and detect_usage_purpose_intent(q):
         return True
 
@@ -286,11 +353,10 @@ def is_contract_source_question(
     if "違約金" in q and any(m in q for m in ("いくら", "幾ら", "金額", "何ヶ月", "何カ月")):
         return True
 
-    # 床材・内装の物理的損傷 → 原状回復（第17条）への seed routing（MH-04 系）
     if _RE_FLOORING_DAMAGE.search(q):
         return True
 
-    # 水道料超過 → 特約①（水道料の超過分）への seed routing（XD-01 系）
+    # 水道料超過 → 特約①（XD-01 系）
     if any(x in q for x in ("水道代", "水道料")) and any(x in q for x in ("超え", "超過")):
         return True
 
@@ -299,7 +365,35 @@ def is_contract_source_question(
             if pat and re.search(pat, q):
                 return True
 
+    # ── Layer B: topic keyword routing（Phase 2 追加） ────────────────────────
+
+    # XD-03: 解約通知 / 解約予告 → 第14条（解約の申し入れ）
+    if ("解約" in q and "通知" in q) or "解約予告" in q:
+        return True
+    # MH-05: クロス + 費用/負担 → 別表第II（原状回復）
+    if "クロス" in q and any(x in q for x in ("費用", "負担")):
+        return True
+    # MH-06: 清掃費 / 退去時清掃 → 特約⑥（クリーニング費用表）
+    if "清掃費" in q or ("清掃" in q and any(x in q for x in ("退去", "費用"))):
+        return True
+
+    # ── Layer D: explicit doc trigger or strong doc-ref meta + domain ─────────
+
+    if _has_explicit_doc_trigger(q):
+        return True
+
     return False
+
+
+def is_contract_source_question(
+    question: str,
+    extra_regex: Optional[Sequence[str]] = None,
+) -> bool:
+    """True if the user is asking what the contract document says.
+
+    Delegates to should_search_master().
+    """
+    return should_search_master(question, extra_regex)
 
 
 def is_important_matters_question(question: str) -> bool:

@@ -125,7 +125,9 @@ def test_answer_uses_contract_prompt_when_master_txt_docs_present(monkeypatch: p
         ]
     )
 
-    answer = rag.answer("解約予告期間を教えてください")
+    # 「解約予告」は should_search_master Layer B で csq=True になるため、
+    # csq=False + master docs の経路を維持するクエリを使用
+    answer = rag.answer("建物の設備を教えてください")
 
     assert answer.summary.startswith("contract_prompt")
     assert answer.next_action

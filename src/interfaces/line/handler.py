@@ -199,7 +199,7 @@ def handle_line_webhook(
 
     try:
         cfg = get_config()
-        from src.contract_query_router import is_contract_source_question
+        from src.contract_query_router import should_search_master
         from src.interfaces.line import clarification_followup as cf
         from src.kb_fast_path import normalize_for_match, try_kb_fast_path
         from src.rag_app_state import get_rag_bundle
@@ -269,9 +269,9 @@ def handle_line_webhook(
             )
             effective_text = resolved or text
 
-            # Contract source questions (条文・重説・違約金額 etc.) must bypass KB fast path
+            # Master-search queries (条文・重説・解約通知・クロス費用 etc.) bypass KB fast path
             # and reach RAGAnswerer so Master TXT is searched. KB fast path only handles FAQ.
-            _is_contract_q = is_contract_source_question(effective_text)
+            _is_contract_q = should_search_master(effective_text)
             if not _is_contract_q:
                 fp = try_kb_fast_path(
                     effective_text,

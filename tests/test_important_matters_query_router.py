@@ -106,8 +106,9 @@ def test_is_contract_source_question_for_juyo(question: str, expected_contract_s
         ("フローリングに傷がついた場合の費用は？", True),
         ("フローリングが剥がれてきた", True),
         ("畳がへこんでしまった、どうすればいい？", True),
+        # MH-05: クロス+費用/負担 → Master RAG（should_search_master Layer B）
+        ("クロスの費用負担はどう決まる？", True),
         # 否定例: 一般的な質問・KB 対象
-        ("クロスの費用負担はどう決まる？", False),   # KB fast path 対象（KB 優先）
         ("水道代はいくら？", False),
         ("月々の支払いは合計いくら？", False),
     ],
