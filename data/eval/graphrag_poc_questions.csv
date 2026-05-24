@@ -1,13 +1,13 @@
-question,expected_category,expected_sources,poc_id,poc_tier,poc_category,expected_graph_path,notes,question_type
-本文第17条の原状回復についての原則は何ですか。,master,master,MH-01,T1,multi_hop,第17条→別表第1第I部,honbun_article_17 / baseline生成失敗報告,fact_lookup
-原状回復の別表（床）では、賃貸人負担と賃借人負担にそれぞれどのような例が挙げられていますか。,master,master,MH-02,T1,multi_hop,別表第1-I-床,gensho_yuka required_ok=0,fact_lookup
-原状回復の別表（壁・天井）では、賃貸人負担と賃借人負担の例として何が書かれていますか。,master,master,MH-03,T1,multi_hop,別表第1-I-壁天井,gensho_kabe_tenjo required_ok=0,fact_lookup
-家具でフローリングがへこんだ、費用は誰負担ですか。,master,master,MH-04,T1,multi_hop,第17条→別表第1-I-床,LINE B-11,fact_lookup
-クロスの費用負担はどう決まる？,master,master,MH-05,T1,multi_hop,別表第II→設備経過年数表,LINE B-13,fact_lookup
-退去時の清掃費はいくら？,master,master,MH-06,T1,multi_hop,特約⑥→別表第1設備,LINE B-02 金額非明示,fact_lookup
-この物件は洪水のリスクはありますか？,master,master,KW-01,T1,keyword,洪水→§12,Sprint3#2 recall=1.0 対照群,fact_lookup
-重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。,master,master,KW-02,T1,keyword,水道料→§3,Sprint3#3 juyo_rent 対照群,fact_lookup
-水道費用についての連絡先,deal,deal,NC-01,T1,negative,KB fast path,回帰防止,fact_lookup
-重説の３項目では家賃はいくら,master,master,NC-02,T1,negative,§3明示,回帰防止,fact_lookup
-水道代が基準を超えたらどうなる？,multi,"deal,master",XD-01,T1,cross_doc,特約①+重説§3,LINE B-04,fact_lookup
-解約の通知は何日前？,multi,"deal,master",XD-03,T1,cross_doc,第14条2項+重説§8-2,LINE B-06,fact_lookup
+question,expected_category,expected_sources,poc_id,poc_tier,poc_category,expected_graph_path,notes,question_type,expected_graph_nodes
+本文第17条の原状回復についての原則は何ですか。,master,master,MH-01,T1,multi_hop,第17条→別表第1第I部,honbun_article_17 / baseline生成失敗報告,fact_lookup,"contract:article:第17条,contract:appendix:別表第1"
+原状回復の別表（床）では、賃貸人負担と賃借人負担にそれぞれどのような例が挙げられていますか。,master,master,MH-02,T1,multi_hop,別表第1-I-床,gensho_yuka required_ok=0,fact_lookup,contract:appendix:別表第1
+原状回復の別表（壁・天井）では、賃貸人負担と賃借人負担の例として何が書かれていますか。,master,master,MH-03,T1,multi_hop,別表第1-I-壁天井,gensho_kabe_tenjo required_ok=0,fact_lookup,contract:appendix:別表第1
+家具でフローリングがへこんだ、費用は誰負担ですか。,master,master,MH-04,T1,multi_hop,第17条→別表第1-I-床,LINE B-11,fact_lookup,"contract:article:第17条,contract:appendix:別表第1"
+クロスの費用負担はどう決まる？,master,master,MH-05,T1,multi_hop,別表第II→設備経過年数表,LINE B-13,fact_lookup,contract:appendix:別表第1
+退去時の清掃費はいくら？,master,master,MH-06,T1,multi_hop,特約⑥→別表第1設備,LINE B-02 金額非明示,fact_lookup,"contract:special_terms:特約,contract:preamble_other:クリーニング"
+この物件は洪水のリスクはありますか？,master,master,KW-01,T1,keyword,洪水→§12,Sprint3#2 recall=1.0 対照群,fact_lookup,important_matters:important_matters_section:§12
+重要事項説明書では、賃料・共益費・水道料はいくらと記載されていますか。,master,master,KW-02,T1,keyword,水道料→§3,Sprint3#3 juyo_rent 対照群,fact_lookup,important_matters:important_matters_section:§3
+水道費用についての連絡先,deal,deal,NC-01,T1,negative,KB fast path,回帰防止,fact_lookup,
+重説の３項目では家賃はいくら,master,master,NC-02,T1,negative,§3明示,回帰防止,fact_lookup,important_matters:important_matters_section:§3
+水道代が基準を超えたらどうなる？,multi,"deal,master",XD-01,T1,cross_doc,特約①+重説§3,LINE B-04,fact_lookup,"contract:special_terms:特約,important_matters:important_matters_section:§3"
+解約の通知は何日前？,multi,"deal,master",XD-03,T1,cross_doc,第14条2項+重説§8-2,LINE B-06,fact_lookup,"contract:article:第14条,important_matters:important_matters_section:§8"

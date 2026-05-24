@@ -70,6 +70,40 @@ def format_evidence_for_llm(evidence: List[str]) -> str:
     return "\n\n".join([f"[根拠{i+1}]\n{ev}" for i, ev in enumerate(evidence)])
 
 
+def _compute_multi_hop_coverage(
+    pre_rerank_nodes: List[Dict[str, Any]],
+    expected_graph_nodes: str,
+) -> Optional[float]:
+    """Compute fraction of expected graph nodes present in the pre-rerank retrieval pool.
+
+    expected_graph_nodes format: comma-separated specs, each "doc_kind:cite_kind:label_fragment"
+    A node is matched if a pool entry has the same doc_kind and cite_kind AND label_fragment
+    appears as a substring of cite_label (or cite_label is empty and fragment matches article_number).
+    Returns None if expected_graph_nodes is empty.
+    """
+    if not expected_graph_nodes or not expected_graph_nodes.strip():
+        return None
+    specs = [s.strip() for s in expected_graph_nodes.split(",") if s.strip()]
+    if not specs:
+        return None
+    hits = 0
+    for spec in specs:
+        parts = spec.split(":", 2)
+        if len(parts) != 3:
+            continue
+        dk, ck, label_frag = parts
+        for node in pre_rerank_nodes:
+            if node.get("doc_kind") != dk:
+                continue
+            if ck and node.get("cite_kind") != ck:
+                continue
+            cl = node.get("cite_label") or node.get("article_number") or ""
+            if label_frag in cl:
+                hits += 1
+                break
+    return hits / len(specs)
+
+
 def evaluate_question(
     question: str,
     rag_answerer: RAGAnswerer,
@@ -85,6 +119,7 @@ def evaluate_question(
     id_mapper: Optional["EvalIDMapper"] = None,
     pii_extra_allowlist_patterns: Optional[List[str]] = None,
     semantic_equivalence: Optional[Dict[str, Set[str]]] = None,
+    expected_graph_nodes: Optional[str] = None,  # GRAPHRAG-POC-01 multi_hop_coverage
 ) -> Dict[str, Any]:
     """Evaluate a single question using the RAG pipeline (Metrics v2).
     
@@ -320,6 +355,14 @@ def evaluate_question(
                 + max(1, len(question) // 4)
             ),
         }
+        # GRAPHRAG-POC-01: multi_hop_coverage from pre-rerank pool
+        _sdi = getattr(answer, "search_debug_info", None) or {}
+        _pre_rerank = _sdi.get("pre_rerank_nodes") or []
+        _graph_expand_added = _sdi.get("graph_expand_added", 0)
+        result["graph_expand_added"] = _graph_expand_added
+        mhc = _compute_multi_hop_coverage(_pre_rerank, expected_graph_nodes or "")
+        if mhc is not None:
+            result["multi_hop_coverage"] = mhc
         return result
         
     except Exception as e:

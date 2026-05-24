@@ -1824,6 +1824,17 @@ class RAGAnswerer:
             reranked = (kb_docs_in_results + other_docs)[: self.config.rag_rerank_top_n]
         
         search_debug_info["rerank_pool_count"] = len(other_docs + kb_docs_in_results)
+        # GRAPHRAG-POC-01: pre-truncation pool metadata for multi_hop_coverage metric
+        search_debug_info["pre_rerank_nodes"] = [
+            {
+                "doc_kind": (d.metadata or {}).get("doc_kind", ""),
+                "cite_kind": (d.metadata or {}).get("cite_kind", ""),
+                "cite_label": (d.metadata or {}).get("cite_label", ""),
+                "article_number": (d.metadata or {}).get("article_number", ""),
+                "section_id": (d.metadata or {}).get("section_id", ""),
+            }
+            for d in (other_docs + kb_docs_in_results)
+        ]
         search_debug_info["after_rerank"] = len(reranked)
         search_debug_info["reranked_intents"] = [
             doc.metadata.get('intent', doc.metadata.get('type', 'unknown'))
@@ -1887,6 +1898,8 @@ class RAGAnswerer:
                     "rank": i + 1,
                     "filename": m.get("filename", ""),
                     "doc_kind": m.get("doc_kind", ""),
+                    "cite_kind": m.get("cite_kind", ""),
+                    "cite_label": m.get("cite_label", ""),
                     "article_number": m.get("article_number"),
                     "article_seq": m.get("article_seq"),
                     "paragraph_seq": m.get("paragraph_seq"),

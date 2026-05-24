@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from src.contract_query_router import (
+    extract_contract_article_index,
     extract_important_matters_section_id,
     is_contract_source_question,
     is_important_matters_question,
@@ -97,8 +98,33 @@ def test_is_contract_source_question_for_juyo(question: str, expected_contract_s
     assert is_contract_source_question(question) is expected_contract_source
 
 
+@pytest.mark.parametrize(
+    "question,expected",
+    [
+        # MH-04 系: 床材損傷 → 原状回復（第17条）への seed routing
+        ("家具でフローリングがへこんだ、費用は誰負担ですか。", True),
+        ("フローリングに傷がついた場合の費用は？", True),
+        ("フローリングが剥がれてきた", True),
+        ("畳がへこんでしまった、どうすればいい？", True),
+        # 否定例: 一般的な質問・KB 対象
+        ("クロスの費用負担はどう決まる？", False),   # KB fast path 対象（KB 優先）
+        ("水道代はいくら？", False),
+        ("月々の支払いは合計いくら？", False),
+    ],
+)
+def test_is_contract_source_question_flooring_damage(question: str, expected: bool) -> None:
+    """MH-04 系: フローリング損傷パターンが contract_source_q=True を返すこと。"""
+    assert is_contract_source_question(question) is expected
+
+
 def test_prefers_contract_when_honbun_article_not_important_matters_only() -> None:
     assert prefers_contract_master_chunks("本文第11条の修繕は誰の負担ですか") is True
+
+
+def test_extract_contract_article_index_flooring() -> None:
+    """フローリング keyword → article 17 (原状回復)."""
+    assert extract_contract_article_index("家具でフローリングがへこんだ、費用は誰負担ですか。") == 17
+    assert extract_contract_article_index("原状回復の費用について") == 17
 
 
 def test_prefers_contract_false_for_hazard_only_without_article() -> None:

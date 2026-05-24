@@ -21,6 +21,11 @@ _RE_TAIKYO_CLEAN = re.compile(r"退去時クリーニング")
 _RE_NENCHU = re.compile(r"経過年数")
 _RE_KEIYAKU_JOKO = re.compile(r"契約条項")
 _RE_USAGE_PURPOSE = re.compile(r"(使用目的|居住目的|居住のみを目的|用途)")
+# 床材・内装への物理的損傷 + 費用負担 → 第17条（原状回復）への seed routing（MH-04 系）
+_RE_FLOORING_DAMAGE = re.compile(
+    r"(フローリング|床材|畳|フローリング材).*(へこ|傷|損傷|剥が|割れ|欠け)"
+    r"|へこ.*(フローリング|床材|畳)"
+)
 _RE_IMPORTANT_MATTERS_DOC = re.compile(r"重要事項説明書")
 # 「重」抜けタイポ（要事項説明書）をフォールバックとして許容
 _RE_JUYO_SETSUMEISHO_TYPO = re.compile(r"要事項説明書")
@@ -151,6 +156,8 @@ _CONTRACT_KEYWORD_ARTICLE_MAP: tuple[tuple[str, int], ...] = (
     ("明渡し", 16),
     # 第17条 原状回復義務等
     ("原状回復", 17),
+    ("フローリング", 17),  # 床材損傷 → 原状回復 (MH-04)
+    ("床材", 17),
     # 第18条 更新
     ("更新手続", 18),
     # 第19条 有益費の償還等
@@ -277,6 +284,10 @@ def is_contract_source_question(
     if "短期解約違約金" in q:
         return True
     if "違約金" in q and any(m in q for m in ("いくら", "幾ら", "金額", "何ヶ月", "何カ月")):
+        return True
+
+    # 床材・内装の物理的損傷 → 原状回復（第17条）への seed routing（MH-04 系）
+    if _RE_FLOORING_DAMAGE.search(q):
         return True
 
     if extra_regex:

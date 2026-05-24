@@ -331,21 +331,5 @@ edges:
       section_id: "20"
     rel: cross_doc_special_terms_mirror
 
-  # 特約⑫（禁煙・原状回復）: 契約 第17条+別表 との橋渡し（§20 経由で到達可能）
-  - from:
-      doc_kind: important_matters
-      section_id: "20"
-    to:
-      doc_kind: contract
-      cite_kind: article
-      cite_label_contains: "第17条"
-    rel: cross_doc_smoking_restoration
-
-  - from:
-      doc_kind: contract
-      cite_kind: article
-      cite_label_contains: "第17条"
-    to:
-      doc_kind: important_matters
-      section_id: "20"
-    rel: cross_doc_smoking_restoration
+  # 特約⑫（禁煙・原状回復）: §20↔第17条 のクロス接続は graph expand 時にノイズを混入させるため削除。
+  # §20 は §20↔特約 (cross_doc_special_terms_mirror) 経由で到達可能。

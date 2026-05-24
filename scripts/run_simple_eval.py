@@ -276,6 +276,16 @@ def calculate_aggregate_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]
         p95_toks_idx = int(len(sorted_ctoks) * 0.95)
         metrics["contract_rag_input_tokens_p95"] = sorted_ctoks[p95_toks_idx]
 
+    # GRAPHRAG-POC-01: multi_hop_coverage aggregate (only questions with expected_graph_nodes)
+    mhc_vals = [r.get("multi_hop_coverage") for r in successful_results if r.get("multi_hop_coverage") is not None]
+    if mhc_vals:
+        metrics["avg_multi_hop_coverage"] = round(sum(mhc_vals) / len(mhc_vals), 4)
+        metrics["multi_hop_coverage_n"] = len(mhc_vals)
+    graph_expand_counts = [r.get("graph_expand_added", 0) for r in successful_results]
+    metrics["graph_expand_fired_rate"] = round(
+        sum(1 for c in graph_expand_counts if c > 0) / successful, 4
+    ) if successful else 0.0
+
     # Gates (targets: completeness >= 0.7, miss rate < 0.1)
     ac = metrics.get("avg_answer_completeness", 0.0)
     metrics["completeness_gate_pass"] = bool(ac >= 0.7)
@@ -327,6 +337,8 @@ def main():
     )
     parser.add_argument(
         "--eval-csv",
+        "--questions-file",  # alias used in PoC eval commands
+        dest="eval_csv",
         type=Path,
         default=None,
         help="Override path to eval questions CSV",
@@ -445,6 +457,9 @@ def main():
         # Get expected answer (optional)
         expected_answer = q_data.get("expected_answer", "")
         
+        # GRAPHRAG-POC-01: expected graph nodes for multi_hop_coverage
+        expected_graph_nodes = q_data.get("expected_graph_nodes", "") or ""
+
         # Evaluate question (Metrics v2)
         result = evaluate_question(
             question=question,
@@ -461,6 +476,7 @@ def main():
             id_mapper=id_mapper,
             pii_extra_allowlist_patterns=pii_allow,
             semantic_equivalence=semantic_map,
+            expected_graph_nodes=expected_graph_nodes if expected_graph_nodes else None,
         )
         
         # Add question metadata

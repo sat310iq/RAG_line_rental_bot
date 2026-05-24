@@ -776,6 +776,84 @@ items[0].text: "特約④については契約書内での記載が確認でき�
 
 ---
 
+## GRAPHRAG-POC-01 後続 eval｜2026-05-24
+
+> issue: rental_rag_poc-uye.1（seed seeding + グラフノイズ修正 + multi_hop_coverage 実装）  
+> eval CSV: `data/eval/graphrag_poc_questions.csv`（12問）  
+> metrics: `data/eval/graphrag_poc_eval_metrics_baseline.json` / `graphrag_poc_eval_metrics_graph.json`
+
+### 実装内容
+
+| タスク | ファイル | 変更内容 |
+|---|---|---|
+| グラフノイズ修正 | `data/sidecar_graph.yaml` | `cross_doc_smoking_restoration` エッジ 2 本削除（34→32 エッジ）。§20（禁煙）↔第17条（原状回復）の双方向接続を除去 |
+| seed seeding | `src/contract_query_router.py` | `_RE_FLOORING_DAMAGE` 正規表現追加、`is_contract_source_question()` に床材損傷判定を追加、`_CONTRACT_KEYWORD_ARTICLE_MAP` に `("フローリング", 17)` / `("床材", 17)` 追加 |
+| multi_hop_coverage | `src/rag_answerer.py` | `pre_rerank_nodes` を `search_debug_info` に格納（graph expand 前プール全件） |
+| multi_hop_coverage | `src/evaluate.py` | `_compute_multi_hop_coverage()` 実装、`expected_graph_nodes` パラメータ追加 |
+| multi_hop_coverage | `scripts/run_simple_eval.py` | `--questions-file` エイリアス追加、`avg_multi_hop_coverage` / `graph_expand_fired_rate` 集計 |
+| multi_hop_coverage | `data/eval/graphrag_poc_questions.csv` | `expected_graph_nodes` 列追加（12問すべてに仕様） |
+
+### eval 結果比較（12問 / DISABLE_SEMANTIC_CACHE=1）
+
+| 指標 | Baseline | 32-edge graph (GRAPH_RAG_ENABLED=1) | Δ |
+|---|---|---|---|
+| avg_relevance | 0.9167 | **0.9583** | **+0.042** ↑ |
+| avg_answer_completeness | 1.0000 | 1.0000 | 0 |
+| avg_evidence_binding_rate | 1.0000 | 1.0000 | 0 |
+| avg_hallucination_fact_error | 0.0000 | 0.0000 | 0 |
+| avg_hallucination_unsourced_claim | 0.0417 | **0.0000** | **−0.042** ↓ |
+| avg_hallucination_overreach | 0.0833 | **0.0417** | **−0.042** ↓ |
+| avg_multi_hop_coverage | 0.5909 | 0.5909 | 0 |
+| graph_expand_fired_rate | 0.0000 | **0.5000** | +0.500 ↑ |
+| routing: contract_source_rag | 6/12 (50%) | 6/12 (50%) | — |
+| latency p50 | 4,003 ms | 5,416 ms | +35% |
+
+### per-question 分析（graph-enhanced）
+
+| ID | 質問（先頭） | csq | rel | mhc | gea |
+|---|---|---|---|---|---|
+| MH-01 | 本文第17条の原状回復 | True | 1.0 | 1.0 | 6 |
+| MH-02 | 原状回復の別表（床） | True | 1.0 | 1.0 | 7 |
+| MH-03 | 原状回復の別表（壁・天井） | True | 1.0 | 1.0 | 6 |
+| MH-04 | 家具でフローリングがへこんだ | **True** ✅ | **1.0** ✅ | 0.5 | 3 |
+| MH-05 | クロスの費用負担 | False | 1.0 | 0.0 | 0 |
+| MH-06 | 退去時の清掃費 | False | 1.0 | 0.0 | 0 |
+| KW-01 | この物件は洪水のリスク | False | 1.0 | 1.0 | 0 |
+| KW-02 | 重要事項説明書では賃料・水道料 | True | 1.0 | 1.0 | 6 |
+| NC-01 | 水道費用についての連絡先 | False | 1.0 | — | 0 |
+| NC-02 | 重説の３項目では家賃はいくら | True | 1.0 | 1.0 | 5 |
+| XD-01 | 水道代が基準を超えたらどうなる？ | False | 0.5 | 0.0 | 0 |
+| XD-03 | 解約の通知は何日前？ | False | 1.0 | 0.0 | 0 |
+
+_csq: contract_source_q / rel: relevance / mhc: multi_hop_coverage / gea: graph_expand_added_
+
+### 解決済み課題
+
+| 課題 | 解決策 | 確認 |
+|---|---|---|
+| Q2 regression（別表床 rel 0.50） | `cross_doc_smoking_restoration` エッジ 2 本削除 | MH-02 rel=1.0 ✅ |
+| MH-04 seed 不足（csq=False → master 未参照） | `_RE_FLOORING_DAMAGE` + フローリング→§17 routing | csq=True, rel=1.0, gea=3 ✅ |
+| multi_hop_coverage 未実装 | `_compute_multi_hop_coverage()` + expected_graph_nodes 列 | avg_mhc=0.5909 計測可 ✅ |
+
+### 残存課題
+
+| 課題 | 内容 |
+|---|---|
+| MH Tier-1 ≥0.8 未達 | avg_multi_hop_coverage=0.5909。MH-04(0.5)・XD-01/03(0.0)が引き下げ |
+| pre_rerank_nodes に graph 展開ドキュメント未含 | graph expand で追加されたドキュメントが coverage に未反映（設計上の制約、graph_expand_added で補完） |
+| XD-01 cross-doc rel=0.5 | 「水道代が基準を超えたら」は特約①+§3 のクロスドック。csq=False → master 未参照 |
+| latency p50 +35% | graph expand の並列 fetch 分の追加コスト（本番採用時に検討） |
+
+### 結論
+
+- **avg_relevance 0.9167 → 0.9583 (+0.04)**：グラフ RAG により品質向上
+- **hallucination 両指標とも改善**：noise edges 削除の効果
+- **graph_expand_fired_rate=0.50**：contract_source_rag 6件すべてで graph expand 発火
+- MH Tier-1（avg_mhc ≥0.8）は未達（0.5909）。XD 系の cross-doc routing が鍵
+- `GRAPH_RAG_ENABLED=1` は品質面で前回 34-edge 時の regression を解消し、本番候補に昇格可能（latency 許容要確認）
+
+---
+
 ## 改善サイクルテンプレート
 
 > Sprint終了ごとにこのブロックをコピーして追記する
